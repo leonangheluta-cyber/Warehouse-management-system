@@ -4,7 +4,6 @@ from datetime import datetime
 import sqlite3
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 
 CARTELLA=os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB=os.path.join(CARTELLA, "script_gestionale_magazzino.db")
