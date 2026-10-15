@@ -29,3 +29,16 @@ def crea_tabella():
     conn.close()
 
 crea_tabella()
+
+@app.post("/catalogo")
+def aggiungi_articolo(articolo: Articolo):
+    conn=sqlite3.connect(PERCORSO_DB)
+    nuovo_articolo=conn.execute("""
+        INSERT INTO GESTIONALE_MAGAZZINO (nome, prezzo, categoria, quantita)
+        VALUES (?, ?, ?, ? )""", 
+        (articolo.nome, articolo.prezzo, articolo.categoria, articolo.quantita))
+    cursore=conn.execute("SELECT * FROM GESTIONALE_MAGAZZINO")
+    ultimo_id=cursore.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": ultimo_id, "Prodotto": articolo}
