@@ -44,7 +44,7 @@ def aggiungi_articolo(articolo: Articolo):
     return {"id": ultimo_id, "Prodotto": articolo}
 
 @app.get("/catalogo")
-def trova_prodotti(prezzo_feriore_a: float=None, categoria: str=None):
+def trova_prodotti(prezzo_inferiore_a: float=None, categoria: str=None):
     conn=sqlite3.connect(PERCORSO_DB)
     cursore=conn.execute("SELECT * FROM GESTIONALE_MAGAZZINO")
     righe=cursore.fetchall()
@@ -55,7 +55,36 @@ def trova_prodotti(prezzo_feriore_a: float=None, categoria: str=None):
     nuovo={}
     for id, prodotto in prodotti.items():
         passa_categoria = categoria is None or categoria.lower() == prodotto["categoria"].lower()
-        passa_prezzo = prezzo_feriore_a is None or prezzo_feriore_a>=prodotto["prezzo"]
+        passa_prezzo = prezzo_inferiore_a is None or prezzo_inferiore_a>=prodotto["prezzo"]
         if passa_categoria and passa_prezzo:
             nuovo[id]=prodotto
     return nuovo
+
+@app.get("/catalogo/{id_prodotto}")
+def cerca_id(id_prodotto: int):
+    conn=sqlite3.connect(PERCORSO_DB)
+    cursore=conn.execute("SELECT * FROM GESTIONALE_MAGAZZINO WHERE id=?", (id_prodotto, ))
+    riga_selezionata=cursore.fetchone()
+    conn.close()
+    nuovo={}
+    if riga_selezionata is not None:
+        nuovo[riga_selezionata[0]]={"nome": riga_selezionata[1], "prezzo": riga_selezionata[2], "categoria": riga_selezionata[3], "quantita": riga_selezionata[4], "data_inserimento": riga_selezionata[5], "data_ultimo_movimento": riga_selezionata[6]}
+        return nuovo
+    else:
+        raise HTTPException(status_code=404, detail="Prodotto non trovato")
+
+@app.delete("/catalogo/{id_prodotto}")
+def rimuovi_prodotto(id_prodotto: int):
+    conn=sqlite3.connect(PERCORSO_DB)
+    cursore=conn.execute("SELECT * FROM GESTIONALE_MAGAZZINO WHERE id=?", (id_prodotto, ))
+    riga_selezionata=cursore.fetchone()
+    if riga_selezionata is not None:
+        prodotto_eliminato={}
+        prodotto_eliminato[riga_selezionata[0]]={"nome": riga_selezionata[1], "prezzo": riga_selezionata[2], "categoria": riga_selezionata[3], "quantita": riga_selezionata[4], "data_inserimento": riga_selezionata[5], "data_ultimo_movimento": riga_selezionata[6]}
+        conn.execute("DELETE FROM GESTIONALE_MAGAZZINO WHERE id=?", (id_prodotto, ))
+        conn.commit()
+        conn.close()
+        return prodotto_eliminato
+    else:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Prodotto non trovato")
