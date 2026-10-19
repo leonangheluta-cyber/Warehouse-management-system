@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from fastapi import HTTPException
+from datetime import datetime
 
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB = os.path.join(CARTELLA, "script_gestionale_magazzino.db")
@@ -41,10 +42,30 @@ def crea_tabella():
 def spacchetta_riga_articolo(riga):
     return {"id": riga[0], "nome": riga[1], "prezzo": riga[2], "categoria": riga[3], "quantita": riga[4], "data_inserimento": riga[5], "data_ultimo_movimento": riga[6]}
 
-def controlla_articolo(id_prodotto, conn):
+def spacchetta_riga_movimento(riga):
+    return {"id": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5]}
+
+def controlla_articolo(conn, id_prodotto):
     cursore=conn.execute("SELECT * FROM articoli WHERE id=?", (id_prodotto, ))
     riga_selezionata=cursore.fetchone()
     if riga_selezionata is None:
         conn.close()
         raise HTTPException(status_code=404, detail="Articolo non trovato")
     return riga_selezionata
+
+def controlla_utente(conn, id_utente):
+    cursore=conn.execute("SELECT * FROM utenti WHERE id = ?", (id_utente, ))
+    riga_selezionata=cursore.fetchone()
+    if riga_selezionata is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Utente non trovato")
+    return riga_selezionata
+
+def crea_movimento(conn, id_utente, id_articolo, quantita, tipo):
+    data=str(datetime.now().replace(microsecond=0))
+    cursore=conn.execute("""INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data) VALUES (?, ?, ?, ?, ?)""", (id_utente, id_articolo, quantita, tipo, data))
+    id_riga=cursore.lastrowid
+    cursore_riga=conn.execute("SELECT * FROM movimenti WHERE id = ?", (id_riga, ))
+    riga_movimento=cursore_riga.fetchone()
+    riga_finale=spacchetta_riga_movimento(riga_movimento)
+    return riga_finale
