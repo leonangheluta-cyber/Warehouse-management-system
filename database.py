@@ -33,7 +33,8 @@ def crea_tabella():
             id_articolo INTEGER,
             quantita INTEGER,
             tipo TEXT, 
-            data TEXT, 
+            data TEXT,
+            giacenza_dopo_movimento INTEGER, 
             FOREIGN KEY (id_utente) REFERENCES utenti(id), 
             FOREIGN KEY (id_articolo) REFERENCES articoli(id))""")
     conn.commit()
@@ -43,7 +44,10 @@ def spacchetta_riga_articolo(riga):
     return {"id": riga[0], "nome": riga[1], "prezzo": riga[2], "categoria": riga[3], "quantita": riga[4], "data_inserimento": riga[5], "data_ultimo_movimento": riga[6]}
 
 def spacchetta_riga_movimento(riga):
-    return {"id": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5]}
+    return {"id": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5], "giacenza_post_movimento": riga[6]}
+
+def spacchetta_movimenti_completo(riga):
+    return {"id": riga[0], "id_utente": riga[1], "nome_utente": riga[2], "quantita": riga[3], "movimento": riga[4], "articolo": riga[5], "qta_post_movimento": riga[6], "data_movimento": riga[7]}
 
 def controlla_articolo(conn, id_prodotto):
     cursore=conn.execute("SELECT * FROM articoli WHERE id=?", (id_prodotto, ))
@@ -61,9 +65,9 @@ def controlla_utente(conn, id_utente):
         raise HTTPException(status_code=404, detail="Utente non trovato")
     return riga_selezionata
 
-def crea_movimento(conn, id_utente, id_articolo, quantita, tipo):
+def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_movimento):
     data=str(datetime.now().replace(microsecond=0))
-    cursore=conn.execute("""INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data) VALUES (?, ?, ?, ?, ?)""", (id_utente, id_articolo, quantita, tipo, data))
+    cursore=conn.execute("""INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data, giacenza_dopo_movimento) VALUES (?, ?, ?, ?, ?, ?)""", (id_utente, id_articolo, quantita, tipo, data, giacenza_post_movimento))
     id_riga=cursore.lastrowid
     cursore_riga=conn.execute("SELECT * FROM movimenti WHERE id = ?", (id_riga, ))
     riga_movimento=cursore_riga.fetchone()
