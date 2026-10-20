@@ -44,10 +44,10 @@ def spacchetta_riga_articolo(riga):
     return {"id": riga[0], "nome": riga[1], "prezzo": riga[2], "categoria": riga[3], "quantita": riga[4], "data_inserimento": riga[5], "data_ultimo_movimento": riga[6]}
 
 def spacchetta_riga_movimento(riga):
-    return {"id": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5], "giacenza_post_movimento": riga[6]}
+    return {"id_movimento": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5], "giacenza_post_movimento": riga[6]}
 
 def spacchetta_movimenti_completo(riga):
-    return {"id": riga[0], "id_utente": riga[1], "nome_utente": riga[2], "quantita": riga[3], "movimento": riga[4], "articolo": riga[5], "qta_post_movimento": riga[6], "data_movimento": riga[7]}
+    return {"id_movimento": riga[0], "id_utente": riga[1], "nome_utente": riga[2], "quantita": riga[3], "movimento": riga[4], "articolo": riga[5], "qta_post_movimento": riga[6], "data_movimento": riga[7]}
 
 def controlla_articolo(conn, id_prodotto):
     cursore=conn.execute("SELECT * FROM articoli WHERE id=?", (id_prodotto, ))

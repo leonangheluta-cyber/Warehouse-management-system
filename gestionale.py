@@ -120,7 +120,7 @@ def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int):
         raise HTTPException(status_code=400, detail="Quantita da prelevare non valida")
     data=str(datetime.now().replace(microsecond=0))
     conn=apri_connessione()
-    riga=controlla_articolo(conn, id_prodotto,)
+    riga=controlla_articolo(conn, id_prodotto)
     controlla_utente(conn, richiesta.id_utente)
     quantita_prodotto_attuale=riga[4]
     if richiesta.quantita<quantita_prodotto_attuale:
@@ -145,7 +145,7 @@ def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int):
     return prodotto_finale, movimento
 
 @app.get("/movimenti")
-def controlla_movimenti():
+def movimenti_completo(data : str=None):
     conn=apri_connessione()
     cursore=conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
                             LEFT JOIN utenti on movimenti.id_utente=utenti.id
@@ -154,6 +154,48 @@ def controlla_movimenti():
     conn.close()
     lista_movimenti=[]
     for riga in movimenti:
-        riga_spacchettata=spacchetta_movimenti_completo(riga)
-        lista_movimenti.append(riga_spacchettata)
+        if data is None or data == riga[7][:10]:
+            riga_spacchettata=spacchetta_movimenti_completo(riga)
+            lista_movimenti.append(riga_spacchettata)
     return lista_movimenti
+
+@app.get("/movimenti/{id_utente}")
+def movimenti_utente(id_utente: int, tipo_movimenti: str=None, data: str=None):
+    if tipo_movimenti is not None and tipo_movimenti not in ["carico", "prelievo"]:
+        raise HTTPException(status_code=400, detail="Tipo di movimento non trovato")
+    conn=apri_connessione()
+    controlla_utente(conn, id_utente)
+    cursore=conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
+                            LEFT JOIN utenti on movimenti.id_utente=utenti.id
+                            LEFT JOIN articoli on movimenti.id_articolo=articoli.id
+                            WHERE utenti.id=? ORDER by movimenti.data""", (id_utente, ))
+    utente=cursore.fetchall()
+    conn.close()
+    lista_movimenti_utente=[]
+    totale_per_utente_carico=0
+    totale_per_utente_prelievo=0
+    for riga in utente:
+        passa_data=data is None or data == riga[7][:10]
+        passa_tipo=tipo_movimenti is None or tipo_movimenti == riga[4]
+        if passa_tipo and passa_data:
+            if riga[4] =="carico":
+                totale_per_utente_carico+=riga[3]
+            else:
+                totale_per_utente_prelievo+=riga[3]
+            riga_utente=spacchetta_movimenti_completo(riga)
+            lista_movimenti_utente.append(riga_utente)
+    if tipo_movimenti is None:
+        return {"movimenti": lista_movimenti_utente, "totale_carico": totale_per_utente_carico, "totale_prelievo": totale_per_utente_prelievo}
+    return {"movimenti": lista_movimenti_utente, "totale" : totale_per_utente_prelievo+totale_per_utente_carico}
+    
+@app.get("/utenti")
+def mostra_utenti():
+    conn=apri_connessione()
+    cursore_utenti=conn.execute("SELECT * FROM utenti")
+    lista_utenti=cursore_utenti.fetchall()
+    conn.close()
+    lista_finale=[]
+    for riga in lista_utenti:
+        utente={"id": riga[0], "nome": riga[1]}
+        lista_finale.append(utente)
+    return lista_finale
