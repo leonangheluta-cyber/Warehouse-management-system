@@ -15,6 +15,7 @@ pickings that can't be traced back to an operator, and history that gets lost.
 - **Movement history**: every loading and picking is recorded with *who*, *what*, *how many*, *when*
   and the *stock left after the movement*
 - **Manager view**: a single endpoint that returns the full history with operator and item names
+- **Operator report**: all movements of one operator, filterable by type and day, with the total pieces loaded and picked
 
 ## Design choices
 
@@ -73,7 +74,9 @@ The database file is created automatically on the first run.
 
 - [ ] Decide how to handle the deletion of an item that already has movements
       (block it with a clear message, or mark the item as inactive)
-- [ ] `GET /utenti` and roles (operator / manager)
+- [x] `GET /utenti`
+- [ ] Roles (operator / manager)
+- [x] Filters on the movement history (by operator, type, date)
 - [ ] Record the initial stock of a new item as a movement
 - [ ] Filters on the movement history (by operator, item, date)
 - [ ] Automated tests
