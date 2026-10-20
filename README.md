@@ -47,7 +47,9 @@ These are the decisions I'm most interested in, because they come from real ware
 | `PATCH` | `/catalogo/{id_prodotto}/carico` | Load stock (records a movement) |
 | `PATCH` | `/catalogo/{id_prodotto}/prelievo` | Pick stock (records a movement, reports missing pieces) |
 | `POST` | `/utenti` | Add an operator |
-| `GET` | `/movimenti` | Full movement history with operator and item names (SQL `JOIN`) |
+| `GET` | `/utenti` | List all operators |
+| `GET` | `/movimenti` | Full movement history with operator and item names (SQL `JOIN`), optional filter `data` (YYYY-MM-DD) |
+| `GET` | `/movimenti/{id_utente}` | Movements of one operator, optional filters `tipo_movimenti` (`carico` / `prelievo`) and `data`, with loaded and picked totals (404 if the operator doesn't exist, 400 if the type is not valid) |
 
 ## Database
 
