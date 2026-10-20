@@ -99,7 +99,7 @@ def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int):
 @app.patch("/catalogo/{id_prodotto}/carico")
 def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int):
     if richiesta.quantita<=0:
-        raise HTTPException(status_code=400, detail="La quantità deve essere magigore di zero")
+        raise HTTPException(status_code=400, detail="La quantità deve essere maggiore di zero")
     data=str(datetime.now().replace(microsecond=0))
     conn=apri_connessione()
     controlla_articolo(conn, id_prodotto,)
