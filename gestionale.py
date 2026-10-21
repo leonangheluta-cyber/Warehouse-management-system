@@ -1,26 +1,26 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from database import apri_connessione, crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo
 app= FastAPI()
 
 class Articolo(BaseModel):
-    nome: str
-    prezzo: float
-    categoria: str
-    quantita: int
+    nome: str = Field(min_length=2)
+    prezzo: float = Field(gt=0)
+    categoria: str = Field(min_length=2)
+    quantita: int = Field(gt=0)
 
 class ModificaArticolo(BaseModel):
-    nome: str | None=None
-    prezzo: float | None=None
-    categoria: str | None=None
+    nome: str | None=Field(default=None, min_length=2)
+    prezzo: float | None=Field(default=None, gt=0)
+    categoria: str | None=Field(default=None, min_length=2)
 
 class CaricoPrelievo(BaseModel):
-    quantita: int
-    id_utente: int
+    quantita: int = Field(gt=0)
+    id_utente: int =Field(gt=0)
 
 class Utente(BaseModel):
-    nome: str
+    nome: str = Field(min_length=2)
 
 crea_tabella()
 
@@ -35,8 +35,6 @@ def nuovo_utente(nuovo: Utente):
 
 @app.post("/catalogo")
 def aggiungi_articolo(articolo: Articolo):
-    if articolo.quantita<=0:
-        raise HTTPException(status_code=400, detail="Inserisci una quantita valida")
     data=str(datetime.now().replace(microsecond=0))
     conn=apri_connessione()
     cursore=conn.execute("""
@@ -98,8 +96,6 @@ def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int):
 
 @app.patch("/catalogo/{id_prodotto}/carico")
 def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int):
-    if richiesta.quantita<=0:
-        raise HTTPException(status_code=400, detail="La quantità deve essere maggiore di zero")
     data=str(datetime.now().replace(microsecond=0))
     conn=apri_connessione()
     controlla_articolo(conn, id_prodotto,)
@@ -116,8 +112,6 @@ def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int):
 
 @app.patch("/catalogo/{id_prodotto}/prelievo")
 def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int):
-    if richiesta.quantita<=0:
-        raise HTTPException(status_code=400, detail="Quantita da prelevare non valida")
     data=str(datetime.now().replace(microsecond=0))
     conn=apri_connessione()
     riga=controlla_articolo(conn, id_prodotto)
