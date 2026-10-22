@@ -18,7 +18,7 @@ def aggiungi_dati_db_prova():
     conn=database.apri_connessione()
     conn.executemany("""INSERT INTO articoli (nome, prezzo, categoria, quantita, data_inserimento) VALUES (?, ?, ?, ?, ?)""",
                         (("Mouse gaming", 25, "mouse", 15, data), ("Monitor LG 2k", 250, "monitor", 24, data)))
-    conn.execute("INSERT INTO utenti (nome) VALUES (?)", ("Leon", ))
+    conn.executemany("INSERT INTO utenti (nome) VALUES (?)", (("Leon", ), ("Mario", )))
     conn.executemany("INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data, giacenza_dopo_movimento) VALUES (?, ?, ?, ?, ?, ?)",
                     ((1, 1, 10, "carico", data, 25), (1, 2, 10, "prelievo", data, 34)))
     conn.commit()
@@ -158,7 +158,6 @@ def test_preleva_quantita_maggiore_di_stock():
     assert richiesta_giacenza.status_code == 200
     giacenza = richiesta_giacenza.json()["quantita"]
     risposta = client.patch("/catalogo/2/prelievo" , json={"quantita": 9999, "id_utente": 1})
-    print(risposta.json())
     assert risposta.status_code == 200
     assert risposta.json()[0]["quantita"] == 0
     assert risposta.json()[0]["mancanti"] == 9999 - giacenza
@@ -212,3 +211,30 @@ def test_inserimenti_prodotto_valido():
     assert rilettura.status_code == 200
     assert rilettura.json()["id"] == id_nuovo_prodotto
     assert rilettura.json()["nome"] == PRODOTTO_VALIDO["nome"]
+
+def test_rimuovi_utente_inesistente():
+    risposta = client.delete("/utenti/9999")
+    assert risposta.status_code == 404
+    assert risposta.json()["detail"] == "Utente non trovato"
+
+def test_rimuovi_utente_esistente():
+    richiesta_nome_utente = client.get("/utenti/2")
+    assert richiesta_nome_utente.status_code == 200
+    nome_utente = richiesta_nome_utente.json()["nome"]
+    risposta = client.delete("/utenti/2")
+    assert risposta.status_code == 200
+    assert risposta.json()["nome"] == nome_utente
+    verifica_rimozione = client.get("/utenti/2")
+    assert verifica_rimozione.status_code == 404
+    assert verifica_rimozione.json()["detail"] == "Utente non trovato"
+
+def test_trova_utente_id_inesistente():
+    risposta = client.get("/utenti/9999")
+    assert risposta.status_code == 404
+    assert risposta.json()["detail"] == "Utente non trovato"
+
+def test_trova_id_utente_esistente():
+    risposta = client.get("/utenti/1")
+    assert risposta.status_code == 200
+    assert risposta.json() != {}
+    assert risposta.json()["nome"] == "Leon"

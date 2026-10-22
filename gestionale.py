@@ -193,3 +193,19 @@ def mostra_utenti():
         utente={"id": riga[0], "nome": riga[1]}
         lista_finale.append(utente)
     return lista_finale
+
+@app.get("/utenti/{id_utente}")
+def cerca_utente(id_utente: int):
+    conn=apri_connessione()
+    riga_utente=controlla_utente(conn, id_utente)
+    conn.close()
+    return {"id": riga_utente[0], "nome": riga_utente[1]}
+
+@app.delete("/utenti/{id_utente}")
+def rimuovi_utente(id_utente: int):
+    conn=apri_connessione()
+    riga_utente=controlla_utente(conn, id_utente)
+    conn.execute("DELETE FROM utenti WHERE id = ?", (id_utente, ))
+    conn.commit()
+    conn.close()
+    return {"id": riga_utente[0], "nome": riga_utente[1]}
