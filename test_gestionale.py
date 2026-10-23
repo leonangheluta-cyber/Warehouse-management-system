@@ -1,32 +1,61 @@
 from fastapi.testclient import TestClient
-from gestionale import app
 import database
 import os
 from datetime import datetime
-client=TestClient(app)
+import pytest
 
 CARTELLA=os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB_PROVA=os.path.join(CARTELLA, "gestionale_test.db")
 database.PERCORSO_DB=PERCORSO_DB_PROVA
-if os.path.exists(PERCORSO_DB_PROVA):
-    os.remove(PERCORSO_DB_PROVA)
 
-database.crea_tabella()
+from gestionale import app # --> IMPORT DOPO IL CAMBIO DI PERCORSO, gestionale.py CREA LòA TABELLA APPENA VIENE IMPORTATA
+client=TestClient(app)
+
 data=str(datetime.now().replace(microsecond=0))
 
 def aggiungi_dati_db_prova():
     conn=database.apri_connessione()
     conn.executemany("""INSERT INTO articoli (nome, prezzo, categoria, quantita, data_inserimento) VALUES (?, ?, ?, ?, ?)""",
-                        (("Mouse gaming", 25, "mouse", 15, data), ("Monitor LG 2k", 250, "monitor", 24, data)))
+                        (("Mouse gaming", 25, "mouse", 15, data), ("Monitor LG 2k", 250, "monitor", 24, data), ("Tastiera meccanica", 25, "tastiere", 15, data)))
     conn.executemany("INSERT INTO utenti (nome) VALUES (?)", (("Leon", ), ("Mario", )))
     conn.executemany("INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data, giacenza_dopo_movimento) VALUES (?, ?, ?, ?, ?, ?)",
-                    ((1, 1, 10, "carico", data, 25), (1, 2, 10, "prelievo", data, 34)))
+                    ((1, 1, 10, "carico", data, 15), (1, 2, 10, "prelievo", data, 24)))
     conn.commit()
     conn.close()
 
-aggiungi_dati_db_prova()
+@pytest.fixture(autouse=True)
+def crea_db_prova():
+    if os.path.exists(PERCORSO_DB_PROVA):
+        os.remove(PERCORSO_DB_PROVA)
+    database.crea_tabella()
+    aggiungi_dati_db_prova()
+    yield
+    os.remove(PERCORSO_DB_PROVA)
 
 PRODOTTO_VALIDO={"nome": "Tappetino mouse", "prezzo": 15, "categoria": "mouse", "quantita": 25}
+
+def test_prova_funzione_fixture_aggiungi_prodotto():
+    risposta = client.post("/catalogo", json=PRODOTTO_VALIDO)    
+    assert risposta.status_code == 200
+    id_nuovo_prodotto = risposta.json()["id"]
+    assert risposta.json()["Prodotto"]["nome"] == PRODOTTO_VALIDO["nome"]
+    richiesta_nuovo = client.get(f"/catalogo/{id_nuovo_prodotto}")
+    assert richiesta_nuovo.status_code == 200
+    assert richiesta_nuovo.json()["id"] == id_nuovo_prodotto
+### FUNZIONE DI PROVA PER IL FIXTURE
+def test_get_prodotto_cancellato_funzione_fixture():
+    risposta = client.get("/catalogo/4")
+    assert risposta.status_code == 404
+    assert risposta.json()["detail"] == "Articolo non trovato"
+
+def test_prova_funzione_fixture_delete_prodotto():
+    risposta = client.delete("/catalogo/3")
+    assert risposta.status_code == 200
+    id_cancellato = risposta.json()["id"]
+    assert risposta.json()["id"] == 3
+    get_prodotto_cancellato = client.get(f"/catalogo/{id_cancellato}")
+    assert get_prodotto_cancellato.status_code == 404
+    assert get_prodotto_cancellato.json()["detail"] == "Articolo non trovato"
 
 def test_utente_corto():
     risposta = client.post("/utenti", json = {"nome": "a"})
@@ -190,8 +219,8 @@ def test_movimenti_utente_inesistente():
 
 def test_movimenti_filtro_carico():
     risposta = client.get("/movimenti/1?tipo_movimenti=carico")
-    dati = risposta.json()["movimenti"]
     assert risposta.status_code == 200
+    dati = risposta.json()["movimenti"]
     assert dati!= []
     for riga in dati:
         assert riga["movimento"] == "carico"
