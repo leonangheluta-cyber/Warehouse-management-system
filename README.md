@@ -1,8 +1,7 @@
 # Warehouse Management API
 
 A small warehouse management backend built with **FastAPI** and **SQLite**, designed around
-the problems I saw every day in 10 years of warehouse work: stock that doesn't add up,
-pickings that can't be traced back to an operator, and history that gets lost.
+what I saw every day in 10 years of warehouse work.
 
 > **Status: work in progress.** Version 1 (items, loading, picking) is complete.
 > Version 2 (operators and stock movement history) is being built right now.

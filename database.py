@@ -65,6 +65,20 @@ def controlla_utente(conn, id_utente):
         raise HTTPException(status_code=404, detail="Utente non trovato")
     return riga_selezionata
 
+def controlla_movimento_prodotto(conn, id_prodotto):
+    cursore=conn.execute("SELECT count(*) FROM movimenti WHERE id_articolo = ?", (id_prodotto, ))
+    riga_selezionata=cursore.fetchone()
+    if riga_selezionata[0] > 0:
+        conn.close()
+        raise HTTPException(status_code=409, detail="Impossibile eliminare il prodotto: presenta dei movimenti")
+
+def controlla_movimento_utente(conn, id_utente):
+    cursore=conn.execute("SELECT count(*) FROM movimenti WHERE id_utente = ?", (id_utente, ))
+    riga_selezionata=cursore.fetchone()
+    if riga_selezionata[0] > 0:
+        conn.close()
+        raise HTTPException(status_code=409, detail="Impossibile eliminare l'utente: presenta dei movimenti")
+    
 def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_movimento):
     data=str(datetime.now().replace(microsecond=0))
     cursore=conn.execute("""INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data, giacenza_dopo_movimento) VALUES (?, ?, ?, ?, ?, ?)""", (id_utente, id_articolo, quantita, tipo, data, giacenza_post_movimento))

@@ -48,15 +48,6 @@ def test_get_prodotto_cancellato_funzione_fixture():
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Articolo non trovato"
 
-def test_prova_funzione_fixture_delete_prodotto():
-    risposta = client.delete("/catalogo/3")
-    assert risposta.status_code == 200
-    id_cancellato = risposta.json()["id"]
-    assert risposta.json()["id"] == 3
-    get_prodotto_cancellato = client.get(f"/catalogo/{id_cancellato}")
-    assert get_prodotto_cancellato.status_code == 404
-    assert get_prodotto_cancellato.json()["detail"] == "Articolo non trovato"
-
 def test_utente_corto():
     risposta = client.post("/utenti", json = {"nome": "a"})
     assert risposta.status_code == 422
@@ -246,24 +237,39 @@ def test_rimuovi_utente_inesistente():
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Utente non trovato"
 
-def test_rimuovi_utente_esistente():
-    richiesta_nome_utente = client.get("/utenti/2")
-    assert richiesta_nome_utente.status_code == 200
-    nome_utente = richiesta_nome_utente.json()["nome"]
-    risposta = client.delete("/utenti/2")
-    assert risposta.status_code == 200
-    assert risposta.json()["nome"] == nome_utente
-    verifica_rimozione = client.get("/utenti/2")
-    assert verifica_rimozione.status_code == 404
-    assert verifica_rimozione.json()["detail"] == "Utente non trovato"
-
 def test_trova_utente_id_inesistente():
     risposta = client.get("/utenti/9999")
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Utente non trovato"
 
-def test_trova_id_utente_esistente():
-    risposta = client.get("/utenti/1")
+def test_rimuovi_utente_con_movimenti():
+    risposta = client.delete("/utenti/1")
+    assert risposta.status_code == 409
+    assert risposta.json()["detail"] == "Impossibile eliminare l'utente: presenta dei movimenti"
+    controllo = client.get("/utenti/1")
+    assert controllo.status_code == 200
+    assert controllo.json()["id"] == 1
+
+def test_rimuovi_utente_senza_movimenti():
+    risposta = client.delete("/utenti/2")
     assert risposta.status_code == 200
-    assert risposta.json() != {}
-    assert risposta.json()["nome"] == "Leon"
+    assert risposta.json()["id"] == 2
+    controllo = client.get("/utenti/2")
+    assert controllo.status_code == 404
+    assert controllo.json()["detail"] == "Utente non trovato"
+
+def test_rimuovi_articolo_con_movimenti():
+    risposta = client.delete("/catalogo/1")
+    assert risposta.status_code == 409
+    assert risposta.json()["detail"] == "Impossibile eliminare il prodotto: presenta dei movimenti"
+    controllo = client.get("/catalogo/3")
+    assert controllo.status_code == 200
+    assert controllo.json()["id"] == 3
+
+def test_rimuovi_articolo_senza_movimenti():
+    risposta = client.delete("/catalogo/3")
+    assert risposta.status_code == 200
+    assert risposta.json()["id"] == 3
+    controllo = client.get("/catalogo/3")
+    assert controllo.status_code == 404
+    assert controllo.json()["detail"] == "Articolo non trovato"

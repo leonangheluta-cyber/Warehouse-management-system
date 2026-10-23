@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from datetime import datetime
-from database import apri_connessione, crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo
+from database import apri_connessione, crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente
 app= FastAPI()
 
 class Articolo(BaseModel):
@@ -75,7 +75,8 @@ def cerca_id(id_prodotto: int):
 @app.delete("/catalogo/{id_prodotto}")
 def rimuovi_prodotto(id_prodotto: int):
     conn=apri_connessione()
-    riga=controlla_articolo(conn, id_prodotto,)
+    riga=controlla_articolo(conn, id_prodotto)
+    controlla_movimento_prodotto(conn, id_prodotto)
     prodotto_eliminato=spacchetta_riga_articolo(riga)
     conn.execute("DELETE FROM articoli WHERE id=?", (id_prodotto, ))
     conn.commit()
@@ -205,6 +206,7 @@ def cerca_utente(id_utente: int):
 def rimuovi_utente(id_utente: int):
     conn=apri_connessione()
     riga_utente=controlla_utente(conn, id_utente)
+    controlla_movimento_utente(conn, id_utente)
     conn.execute("DELETE FROM utenti WHERE id = ?", (id_utente, ))
     conn.commit()
     conn.close()
