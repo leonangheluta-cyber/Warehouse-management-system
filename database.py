@@ -25,7 +25,8 @@ def crea_tabella():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS utenti (
             id INTEGER PRIMARY KEY, 
-            nome TEXT)""")
+            nome TEXT,
+            hash TEXT)""")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS movimenti (
             id INTEGER PRIMARY KEY, 

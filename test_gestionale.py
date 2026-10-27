@@ -3,6 +3,7 @@ import database
 import os
 from datetime import datetime
 import pytest
+from gestionale import password_hash
 
 CARTELLA=os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB_PROVA=os.path.join(CARTELLA, "gestionale_test.db")
@@ -12,6 +13,9 @@ from gestionale import app # --> IMPORT DOPO IL CAMBIO DI PERCORSO, gestionale.p
 client=TestClient(app)
 
 data=str(datetime.now().replace(microsecond=0))
+
+PRODOTTO_VALIDO = {"nome": "Tappetino mouse", "prezzo": 15, "categoria": "mouse", "quantita": 25}
+UTENTE_VALIDO = {"nome": "Mario", "password": "cane12345"}
 
 def aggiungi_dati_db_prova():
     conn=database.apri_connessione()
@@ -32,7 +36,51 @@ def crea_db_prova():
     yield
     os.remove(PERCORSO_DB_PROVA)
 
-PRODOTTO_VALIDO={"nome": "Tappetino mouse", "prezzo": 15, "categoria": "mouse", "quantita": 25}
+def test_nuovo_utente_password_corta():
+    dati = UTENTE_VALIDO.copy()
+    dati["password"] = "a" 
+    risposta = client.post("/utenti", json=dati)
+    assert risposta.status_code == 422
+    assert risposta.json()["detail"][0]["loc"] == ["body", "password"]
+    assert risposta.json()["detail"][0]["type"] == "string_too_short"
+
+def test_hash_utente():
+    risposta = client.post("/utenti", json=UTENTE_VALIDO)
+    assert risposta.status_code == 200
+    id_utente = risposta.json()["id"]
+    conn = database.apri_connessione()
+    cursore = conn.execute("SELECT hash FROM utenti WHERE id = ?", (id_utente, ))
+    hash_utente = cursore.fetchone()
+    conn.close()
+    verifica = password_hash.verify(UTENTE_VALIDO["password"], hash_utente[0])
+    assert verifica
+
+def test_login_password_sbagliata():
+    risposta = client.post("/utenti", json=UTENTE_VALIDO)
+    assert risposta.status_code == 200
+    id_utente = risposta.json()["id"]
+    controllo = client.post("/login", json={"id_utente": id_utente, "password": "a"})
+    assert controllo.status_code == 401
+    assert controllo.json()["detail"] == "Credenziali non valide"
+
+def test_login_corretto():
+    risposta = client.post("/utenti", json=UTENTE_VALIDO)
+    assert risposta.status_code == 200
+    id_utente = risposta.json()["id"]
+    password = UTENTE_VALIDO["password"]
+    controllo = client.post("/login", json={"id_utente": id_utente, "password": password})
+    assert controllo.status_code == 200
+    assert controllo.json() == "Accesso consentito"
+
+def test_login_id_inesistente():
+    risposta = client.post("/login", json={"id_utente": 9999, "password": "cane12345"})
+    assert risposta.status_code == 401
+    assert risposta.json()["detail"] == "Credenziali non valide"
+
+def test_login_senza_hash(): # --> utente 1 perche di base non ha l'hash in quanto inserito nei dati di prova senza
+    risposta = client.post("/login", json={"id_utente": 1, "password": "cane1234"})
+    assert risposta.status_code == 401
+    assert risposta.json()["detail"] == "Credenziali non valide"
 
 def test_prova_funzione_fixture_aggiungi_prodotto():
     risposta = client.post("/catalogo", json=PRODOTTO_VALIDO)    
@@ -49,7 +97,7 @@ def test_get_prodotto_cancellato_funzione_fixture():
     assert risposta.json()["detail"] == "Articolo non trovato"
 
 def test_utente_corto():
-    risposta = client.post("/utenti", json = {"nome": "a"})
+    risposta = client.post("/utenti", json = {"nome": "a", "password": "cane12345"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "nome"]
     assert risposta.json()["detail"][0]["type"] == "string_too_short"
