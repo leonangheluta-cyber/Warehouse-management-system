@@ -38,6 +38,11 @@ def crea_tabella():
             giacenza_dopo_movimento INTEGER, 
             FOREIGN KEY (id_utente) REFERENCES utenti(id), 
             FOREIGN KEY (id_articolo) REFERENCES articoli(id))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sessioni (
+            id_utente INTEGER,
+            token TEXT PRIMARY KEY,
+            scadenza TEXT,
+            FOREIGN KEY (id_utente) REFERENCES utenti(id))""")
     conn.commit()
     conn.close()
 
@@ -88,3 +93,21 @@ def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_m
     riga_movimento=cursore_riga.fetchone()
     riga_finale=spacchetta_riga_movimento(riga_movimento)
     return riga_finale
+
+def controlla_token(conn, header):
+    if not header or not header.startswith("Bearer "):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Token mancante")
+    token = header.split(" ")[1]
+    cursore = conn.execute("SELECT scadenza, id_utente FROM sessioni WHERE token = ?", (token, ))
+    tupla_dati = cursore.fetchone()
+    if tupla_dati is None:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Token non valido")
+    scadenza = datetime.fromisoformat(tupla_dati[0])
+    id_utente = tupla_dati[1]
+    if scadenza > datetime.now().replace(microsecond=0):
+        return id_utente
+    else:
+        conn.close()
+        raise HTTPException(status_code=401, detail="Token scaduto")

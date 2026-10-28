@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
-from database import apri_connessione, crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente
+from database import apri_connessione, crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente, controlla_token
 import secrets
 from pwdlib import PasswordHash
 password_hash = PasswordHash.recommended()
@@ -21,7 +21,6 @@ class ModificaArticolo(BaseModel):
 
 class CaricoPrelievo(BaseModel):
     quantita: int = Field(gt = 0)
-    id_utente: int = Field(gt = 0)
 
 class Utente(BaseModel):
     nome: str = Field(min_length = 2)
@@ -34,7 +33,7 @@ class LoginUtente(BaseModel):
 crea_tabella()
 
 @app.post("/utenti")
-def nuovo_utente(nuovo: Utente):
+def nuovo_utente(nuovo: Utente, authorization: str | None = Header(default = None)):
     conn = apri_connessione()
     hash_utente = password_hash.hash(nuovo.password)
     cursore = conn.execute("INSERT INTO utenti (nome, hash) VALUES (?, ?)", (nuovo.nome, hash_utente))
@@ -48,20 +47,27 @@ def login_utente(utente: LoginUtente):
     conn = apri_connessione()
     cursore = conn.execute("SELECT hash FROM utenti WHERE id = ?", (utente.id_utente, ))
     riga = cursore.fetchone()
-    conn.close()
     if riga is None or riga[0] is None:
+        conn.close()
         raise HTTPException(status_code=401, detail="Credenziali non valide")
     hash_utente = riga[0]
     verifica = password_hash.verify(utente.password, hash_utente)
     if verifica:
-        return "Accesso consentito"
+        token = secrets.token_urlsafe(32)
+        scadenza = datetime.now().replace(microsecond=0) + timedelta(hours=8)
+        conn.execute("INSERT INTO sessioni (id_utente, token, scadenza) VALUES (?, ?, ?)", (utente.id_utente, token, str(scadenza)))
+        conn.commit()
+        conn.close()
+        return {"token": token}
     else:
+        conn.close()
         raise HTTPException(status_code=401, detail="Credenziali non valide")
 
 @app.post("/catalogo")
-def aggiungi_articolo(articolo: Articolo):
+def aggiungi_articolo(articolo: Articolo, authorization: str | None = Header(default = None)):
     data = str(datetime.now().replace(microsecond = 0))
     conn = apri_connessione()
+    controlla_token(conn, authorization)
     cursore = conn.execute("""
         INSERT INTO articoli (nome, prezzo, categoria, quantita, data_inserimento, data_ultimo_movimento)
         VALUES (?, ?, ?, ?, ?, ? )""", 
@@ -121,27 +127,29 @@ def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int):
     return prodotto_finale
 
 @app.patch("/catalogo/{id_prodotto}/carico")
-def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int):
+def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int, authorization: str | None = Header(default = None)):
     data = str(datetime.now().replace(microsecond = 0))
     conn = apri_connessione()
+    id_utente = controlla_token(conn, authorization)
     controlla_articolo(conn, id_prodotto,)
-    controlla_utente(conn, richiesta.id_utente)
+    controlla_utente(conn, id_utente)
     conn.execute("""UPDATE articoli SET quantita = quantita + ?, data_ultimo_movimento = ? WHERE id = ?""", (richiesta.quantita, data, id_prodotto))
     cursore_aggiornato = conn.execute("SELECT * FROM articoli WHERE id = ?", (id_prodotto, ))
     prodotto_aggiornato = cursore_aggiornato.fetchone()
     giacenza_aggiornata = prodotto_aggiornato[4]
-    movimento = crea_movimento(conn, richiesta.id_utente, id_prodotto, richiesta.quantita, "carico", giacenza_aggiornata)
+    movimento = crea_movimento(conn, id_utente, id_prodotto, richiesta.quantita, "carico", giacenza_aggiornata)
     conn.commit()
     conn.close()
     prodotto_finale = spacchetta_riga_articolo(prodotto_aggiornato)
     return prodotto_finale, movimento
 
 @app.patch("/catalogo/{id_prodotto}/prelievo")
-def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int):
+def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int, authorization: str | None = Header(default = None)):
     data = str(datetime.now().replace(microsecond = 0))
     conn = apri_connessione()
+    id_utente = controlla_token(conn, authorization)
     riga = controlla_articolo(conn, id_prodotto)
-    controlla_utente(conn, richiesta.id_utente)
+    controlla_utente(conn, id_utente)
     quantita_prodotto_attuale = riga[4]
     if richiesta.quantita<quantita_prodotto_attuale:
         quantita_prelevata = richiesta.quantita
@@ -153,7 +161,7 @@ def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int):
     cursore_aggiornato = conn.execute("SELECT * FROM articoli WHERE id = ?", (id_prodotto, ))
     prodotto_aggiornato = cursore_aggiornato.fetchone()
     giacenza_finale = prodotto_aggiornato[4]
-    movimento = crea_movimento(conn, richiesta.id_utente, id_prodotto, quantita_prelevata, "prelievo", giacenza_finale)
+    movimento = crea_movimento(conn, id_utente, id_prodotto, quantita_prelevata, "prelievo", giacenza_finale)
     conn.commit()
     conn.close()
     prodotto_finale = spacchetta_riga_articolo(prodotto_aggiornato)
@@ -180,10 +188,11 @@ def movimenti_completo(data : str = None):
     return lista_movimenti
 
 @app.get("/movimenti/{id_utente}")
-def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None):
+def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None, authorization: str | None = Header(default= None)):
     if tipo_movimenti is not None and tipo_movimenti not in ["carico", "prelievo"]:
         raise HTTPException(status_code = 400, detail = "Tipo di movimento non trovato")
     conn = apri_connessione()
+    controlla_token(conn, authorization)
     controlla_utente(conn, id_utente)
     cursore = conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
                             LEFT JOIN utenti on movimenti.id_utente = utenti.id
@@ -209,8 +218,9 @@ def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = Non
     return {"movimenti": lista_movimenti_utente, "totale" : totale_per_utente_prelievo+totale_per_utente_carico}
     
 @app.get("/utenti")
-def mostra_utenti():
+def mostra_utenti(authorization: str | None = Header(default= None)):
     conn = apri_connessione()
+    controlla_token(conn, authorization)
     cursore_utenti = conn.execute("SELECT * FROM utenti")
     lista_utenti = cursore_utenti.fetchall()
     conn.close()
@@ -232,6 +242,7 @@ def rimuovi_utente(id_utente: int):
     conn = apri_connessione()
     riga_utente = controlla_utente(conn, id_utente)
     controlla_movimento_utente(conn, id_utente)
+    conn.execute("DELETE FROM sessioni WHERE id_utente = ?", (id_utente, ))
     conn.execute("DELETE FROM utenti WHERE id = ?", (id_utente, ))
     conn.commit()
     conn.close()

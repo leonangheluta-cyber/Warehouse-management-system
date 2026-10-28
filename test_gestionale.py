@@ -24,8 +24,16 @@ def aggiungi_dati_db_prova():
     conn.executemany("INSERT INTO utenti (nome) VALUES (?)", (("Leon", ), ("Mario", )))
     conn.executemany("INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data, giacenza_dopo_movimento) VALUES (?, ?, ?, ?, ?, ?)",
                     ((1, 1, 10, "carico", data, 15), (1, 2, 10, "prelievo", data, 24)))
+    conn.execute("INSERT INTO sessioni (id_utente, token, scadenza) VALUES (?, ?, ?)", (1, "TOKEN_SCADUTO", "2020-10-10 00:00:00"))
     conn.commit()
     conn.close()
+
+def registra_e_login():
+    risposta = client.post("/utenti", json=UTENTE_VALIDO)
+    id_utente = risposta.json()["id"]
+    login = client.post("/login", json={"id_utente": id_utente, "password": UTENTE_VALIDO["password"]})
+    token = login.json()["token"]
+    return token
 
 @pytest.fixture(autouse=True)
 def crea_db_prova():
@@ -35,6 +43,44 @@ def crea_db_prova():
     aggiungi_dati_db_prova()
     yield
     os.remove(PERCORSO_DB_PROVA)
+
+def test_registra_e_cancella_utente():
+    token = registra_e_login()
+    conn = database.apri_connessione()
+    cursore = conn.execute("SELECT id_utente FROM sessioni WHERE token = ?", (token, ))
+    id_utente = cursore.fetchone()
+    conn.close()
+    risposta = client.delete(f"/utenti/{id_utente[0]}")
+    assert risposta.status_code == 200
+    assert risposta.json()["id"] == id_utente[0]
+    controllo_rimozione = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": f"Bearer {token}"})
+    assert controllo_rimozione.status_code == 401
+    assert controllo_rimozione.json()["detail"] == "Token non valido"
+
+def test_token_mancante_rotta_aggiungi_articolo():
+    dati = PRODOTTO_VALIDO.copy()
+    risposta = client.post("/catalogo", json=dati)
+    assert risposta.status_code == 401
+    assert risposta.json()["detail"] == "Token mancante"
+
+def test_bearer_diverso_rotta_aggiungi_articolo():
+    dati = PRODOTTO_VALIDO.copy()
+    token = registra_e_login()
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": f"Ciao {token}"})
+    assert risposta.status_code == 401
+    assert risposta.json()["detail"] == "Token mancante"
+
+def test_token_non_valido_rotta_aggiungi_articolo():
+    dati = PRODOTTO_VALIDO.copy()
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token non valido"})
+    assert risposta.status_code == 401
+    assert risposta.json()["detail"] == "Token non valido"
+
+def test_token_scaduto_rotta_aggiungi_articolo():
+    dati = PRODOTTO_VALIDO.copy()
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer TOKEN_SCADUTO"})
+    assert risposta.status_code == 401
+    assert risposta.json()["detail"] == "Token scaduto"
 
 def test_nuovo_utente_password_corta():
     dati = UTENTE_VALIDO.copy()
@@ -70,7 +116,11 @@ def test_login_corretto():
     password = UTENTE_VALIDO["password"]
     controllo = client.post("/login", json={"id_utente": id_utente, "password": password})
     assert controllo.status_code == 200
-    assert controllo.json() == "Accesso consentito"
+    conn = database.apri_connessione()
+    cursore = conn.execute("SELECT token FROM sessioni WHERE id_utente = ?", (id_utente, ))
+    token = cursore.fetchone()
+    conn.close()
+    assert controllo.json()["token"] == token[0]
 
 def test_login_id_inesistente():
     risposta = client.post("/login", json={"id_utente": 9999, "password": "cane12345"})
@@ -83,7 +133,8 @@ def test_login_senza_hash(): # --> utente 1 perche di base non ha l'hash in quan
     assert risposta.json()["detail"] == "Credenziali non valide"
 
 def test_prova_funzione_fixture_aggiungi_prodotto():
-    risposta = client.post("/catalogo", json=PRODOTTO_VALIDO)    
+    token = registra_e_login()
+    risposta = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": f"Bearer {token}"})    
     assert risposta.status_code == 200
     id_nuovo_prodotto = risposta.json()["id"]
     assert risposta.json()["Prodotto"]["nome"] == PRODOTTO_VALIDO["nome"]
@@ -184,63 +235,46 @@ def test_trova_prodotti_filtro_prezzo():
         assert riga["prezzo"]<=50
 
 def test_carico_quantita_valida():
-    risposta = client.patch("/catalogo/1/carico", json={"quantita": 5, "id_utente": 1})
+    token = registra_e_login()
+    risposta = client.patch("/catalogo/1/carico", json={"quantita": 5}, headers={"Authorization": f"Bearer {token}"} )
     assert risposta.status_code == 200
     assert risposta.json()[1]["quantita"] == 5
 
 def test_carica_quantita_id_inesistente():
-    risposta = client.patch("/catalogo/9999/carico" , json={"quantita": 5, "id_utente": 1})
+    token = registra_e_login()
+    risposta = client.patch("/catalogo/9999/carico" , json={"quantita": 5}, headers={"Authorization": f"Bearer {token}"} )
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Articolo non trovato"
 
 def test_carica_quantita_zero():
-    risposta = client.patch("/catalogo/1/carico" , json={"quantita": 0, "id_utente": 1})
+    risposta = client.patch("/catalogo/1/carico" , json={"quantita": 0})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "quantita"]
     assert risposta.json()["detail"][0]["type"] == "greater_than"
 
-def test_carica_quantita_id_utente_0():
-    risposta = client.patch("/catalogo/1/carico" , json={"quantita": 5, "id_utente": 0})
-    assert risposta.status_code == 422
-    assert risposta.json()["detail"][0]["loc"] == ["body", "id_utente"]
-    assert risposta.json()["detail"][0]["type"] == "greater_than"
-
-def test_carica_quantita_id_utente_inesistente():
-    risposta = client.patch("/catalogo/1/carico" , json={"quantita": 5, "id_utente": 9999})
-    assert risposta.status_code == 404
-    assert risposta.json()["detail"] == "Utente non trovato"
-
 def test_preleva_quantita_id_inesistente():
-    risposta = client.patch("/catalogo/9999/prelievo" , json={"quantita": 5, "id_utente": 1})
+    token = registra_e_login()
+    risposta = client.patch("/catalogo/9999/prelievo" , json={"quantita": 5}, headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Articolo non trovato"
 
 def test_preleva_quantita_zero():
-    risposta = client.patch("/catalogo/1/prelievo" , json={"quantita": 0, "id_utente": 1})
+    token = registra_e_login()
+    risposta = client.patch("/catalogo/1/prelievo" , json={"quantita": 0}, headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "quantita"]
     assert risposta.json()["detail"][0]["type"] == "greater_than"
 
 def test_preleva_quantita_maggiore_di_stock():
+    token = registra_e_login()
     richiesta_giacenza = client.get("/catalogo/2")
     assert richiesta_giacenza.status_code == 200
     giacenza = richiesta_giacenza.json()["quantita"]
-    risposta = client.patch("/catalogo/2/prelievo" , json={"quantita": 9999, "id_utente": 1})
+    risposta = client.patch("/catalogo/2/prelievo" , json={"quantita": 9999}, headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 200
     assert risposta.json()[0]["quantita"] == 0
     assert risposta.json()[0]["mancanti"] == 9999 - giacenza
     assert risposta.json()[1]["quantita"] == giacenza
-
-def test_preleva_quantita_id_utente_0():
-    risposta = client.patch("/catalogo/1/prelievo" , json={"quantita": 5, "id_utente": 0})
-    assert risposta.status_code == 422
-    assert risposta.json()["detail"][0]["loc"] == ["body", "id_utente"]
-    assert risposta.json()["detail"][0]["type"] == "greater_than"
-
-def test_preleva_quantita_id_utente_inesistente():
-    risposta = client.patch("/catalogo/1/prelievo" , json={"quantita": 5, "id_utente": 9999})
-    assert risposta.status_code == 404
-    assert risposta.json()["detail"] == "Utente non trovato"
 
 def test_movimenti_completo_filtro_data():
     solo_data=data.split(" ")[0]
@@ -252,12 +286,14 @@ def test_movimenti_completo_filtro_data():
         assert riga["data_movimento"].split(" ")[0] == solo_data
 
 def test_movimenti_utente_inesistente():
-    risposta = client.get("/movimenti/9999")
+    token = registra_e_login()
+    risposta = client.get("/movimenti/9999", headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Utente non trovato"
 
 def test_movimenti_filtro_carico():
-    risposta = client.get("/movimenti/1?tipo_movimenti=carico")
+    token = registra_e_login()
+    risposta = client.get("/movimenti/1?tipo_movimenti=carico", headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 200
     dati = risposta.json()["movimenti"]
     assert dati!= []
@@ -265,14 +301,16 @@ def test_movimenti_filtro_carico():
         assert riga["movimento"] == "carico"
 
 def test_mostra_utenti():
-    risposta = client.get("/utenti")
+    token = registra_e_login()
+    risposta = client.get("/utenti", headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 200
     assert risposta.json() != []
     assert risposta.json()[0]["nome"] =="Leon"
 
 def test_inserimenti_prodotto_valido():
+    token = registra_e_login()
     dati = PRODOTTO_VALIDO.copy()
-    risposta = client.post("/catalogo", json=dati)
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 200
     id_nuovo_prodotto = risposta.json()["id"]
     rilettura = client.get(f"/catalogo/{id_nuovo_prodotto}")
