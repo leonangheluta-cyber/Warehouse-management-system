@@ -2,6 +2,15 @@ import sqlite3
 import os
 from fastapi import HTTPException
 from datetime import datetime
+from dotenv import load_dotenv
+from pathlib import Path
+from pwdlib import PasswordHash
+
+password_hash = PasswordHash.recommended()
+path_env = Path.home()/"Secret"/".env"
+load_dotenv(dotenv_path=path_env)
+password_gestionale = os.environ.get("PASSWORD_RESPONSABILE")
+hash_password_gestionale = password_hash.hash(password_gestionale)
 
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB = os.path.join(CARTELLA, "script_gestionale_magazzino.db")
@@ -26,7 +35,10 @@ def crea_tabella():
         CREATE TABLE IF NOT EXISTS utenti (
             id INTEGER PRIMARY KEY, 
             nome TEXT,
+            username TEXT UNIQUE,
+            ruolo TEXT,
             hash TEXT)""")
+    conn.execute("INSERT OR IGNORE INTO utenti (nome, hash, username, ruolo) VALUES (?, ?, ?, ?)", ("Leon",hash_password_gestionale, "leon.l", "responsabile"))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS movimenti (
             id INTEGER PRIMARY KEY, 
@@ -111,3 +123,17 @@ def controlla_token(conn, header):
     else:
         conn.close()
         raise HTTPException(status_code=401, detail="Token scaduto")
+
+def controlla_ruolo_addetto_responsabile(conn, id_utente):
+    cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
+    ruolo = cursore.fetchone()
+    if ruolo[0] not in ["responsabile", "addetto"]:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Richiesta negata")
+
+def controlla_ruolo_responsabile(conn, id_utente):
+    cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
+    ruolo = cursore.fetchone()
+    if ruolo[0] != "responsabile":
+        conn.close()
+        raise HTTPException(status_code=403, detail="Richiesta negata")
