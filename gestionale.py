@@ -35,12 +35,11 @@ class LoginUtente(BaseModel):
 crea_tabella()
 
 @app.post("/utenti")
-def nuovo_utente(nuovo: Utente, id_utente: int = Depends(controlla_token)):
+def nuovo_utente(nuovo: Utente, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     username = nuovo.username.lower()
     ruolo = nuovo.ruolo.lower()
     nome = nuovo.nome.lower()
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente)
     if ruolo not in ["addetto", "responsabile"]:
         conn.close()
         raise HTTPException(status_code=400, detail="Inserire addetto o responsabile")
@@ -122,9 +121,8 @@ def cerca_id(id_prodotto: int, id_utente: int = Depends(controlla_token)):
     return prodotto
   
 @app.delete("/catalogo/{id_prodotto}")
-def rimuovi_prodotto(id_prodotto: int, id_utente: int = Depends(controlla_token)):
+def rimuovi_prodotto(id_prodotto: int, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente)
     riga = controlla_articolo(conn, id_prodotto)
     controlla_movimento_prodotto(conn, id_prodotto)
     prodotto_eliminato = spacchetta_riga_articolo(riga)
@@ -134,9 +132,8 @@ def rimuovi_prodotto(id_prodotto: int, id_utente: int = Depends(controlla_token)
     return prodotto_eliminato
 
 @app.patch("/catalogo/{id_prodotto}")
-def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, id_utente: int = Depends(controlla_token)):
+def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente)
     controlla_articolo(conn, id_prodotto,)
     conn.execute("UPDATE articoli SET nome = coalesce(?, nome), prezzo = coalesce(?, prezzo), categoria = coalesce(?, categoria) WHERE id = ?", (articolo.nome, articolo.prezzo, articolo.categoria, id_prodotto))
     cursore_aggiornato = conn.execute("SELECT * FROM articoli WHERE id = ?", (id_prodotto, ))
@@ -193,9 +190,8 @@ def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int, id_utente: int = 
     return prodotto_finale, movimento
 
 @app.get("/movimenti")
-def movimenti_completo(data : str = None, id_utente: int = Depends(controlla_token)):
+def movimenti_completo(data : str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente)
     cursore = conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
                             LEFT JOIN utenti on movimenti.id_utente = utenti.id
                             LEFT JOIN articoli on movimenti.id_articolo = articoli.id""")
@@ -209,9 +205,8 @@ def movimenti_completo(data : str = None, id_utente: int = Depends(controlla_tok
     return lista_movimenti
 
 @app.get("/movimenti/{id_utente}")
-def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None, id_utente_autorizzato: int = Depends(controlla_token)):
+def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente_autorizzato)
     controlla_utente(conn, id_utente)
     if tipo_movimenti is not None and tipo_movimenti not in ["carico", "prelievo"]:
         raise HTTPException(status_code = 400, detail = "Tipo di movimento non trovato")
@@ -239,9 +234,8 @@ def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = Non
     return {"movimenti": lista_movimenti_utente, "totale" : totale_per_utente_prelievo+totale_per_utente_carico}
     
 @app.get("/utenti")
-def mostra_utenti(id_utente: int = Depends(controlla_token)):
+def mostra_utenti(id_utente: int = Depends(controlla_token), id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente)
     cursore_utenti = conn.execute("SELECT * FROM utenti")
     lista_utenti = cursore_utenti.fetchall()
     conn.close()
@@ -252,17 +246,15 @@ def mostra_utenti(id_utente: int = Depends(controlla_token)):
     return lista_finale
 
 @app.get("/utenti/{id_utente}")
-def cerca_utente(id_utente: int, id_utente_autorizzato: int = Depends(controlla_token)):
+def cerca_utente(id_utente: int, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente_autorizzato)
     riga_utente = controlla_utente(conn, id_utente)
     conn.close()
     return {"id": riga_utente[0], "nome": riga_utente[1]}
 
 @app.delete("/utenti/{id_utente}")
-def rimuovi_utente(id_utente: int, id_utente_autorizzato: int = Depends(controlla_token)):
+def rimuovi_utente(id_utente: int, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     conn = apri_connessione()
-    controlla_ruolo_responsabile(conn, id_utente_autorizzato)
     riga_utente = controlla_utente(conn, id_utente)
     controlla_movimento_utente(conn, id_utente)
     conn.execute("DELETE FROM sessioni WHERE id_utente = ?", (id_utente, ))
