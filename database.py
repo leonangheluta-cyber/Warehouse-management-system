@@ -108,7 +108,8 @@ def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_m
     riga_finale=spacchetta_riga_movimento(riga_movimento)
     return riga_finale
 
-def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), conn: sqlite3.Connection = Depends(apri_connessione)):
+def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer)):
+    conn = apri_connessione()
     token = credenziali.credentials
     cursore = conn.execute("SELECT scadenza, id_utente FROM sessioni WHERE token = ?", (token, ))
     tupla_dati = cursore.fetchone()
@@ -131,9 +132,12 @@ def controlla_ruolo_addetto_responsabile(conn, id_utente):
         conn.close()
         raise HTTPException(status_code=403, detail="Richiesta negata")
 
-def controlla_ruolo_responsabile(conn, id_utente):
+def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token)):
+    conn = apri_connessione()
     cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
     ruolo = cursore.fetchone()
     if ruolo[0] != "responsabile":
         conn.close()
         raise HTTPException(status_code=403, detail="Richiesta negata")
+    conn.close()
+    return id_utente
