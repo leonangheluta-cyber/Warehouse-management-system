@@ -1,11 +1,13 @@
 import sqlite3
 import os
-from fastapi import HTTPException
+from fastapi import HTTPException, Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
 from pwdlib import PasswordHash
 
+schema_bearer = HTTPBearer()
 password_hash = PasswordHash.recommended()
 path_env = Path.home()/"Secret"/".env"
 load_dotenv(dotenv_path=path_env)
@@ -106,11 +108,8 @@ def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_m
     riga_finale=spacchetta_riga_movimento(riga_movimento)
     return riga_finale
 
-def controlla_token(conn, header):
-    if not header or not header.startswith("Bearer "):
-        conn.close()
-        raise HTTPException(status_code=401, detail="Token mancante")
-    token = header.split(" ")[1]
+def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), conn: sqlite3.Connection = Depends(apri_connessione)):
+    token = credenziali.credentials
     cursore = conn.execute("SELECT scadenza, id_utente FROM sessioni WHERE token = ?", (token, ))
     tupla_dati = cursore.fetchone()
     if tupla_dati is None:
@@ -119,6 +118,7 @@ def controlla_token(conn, header):
     scadenza = datetime.fromisoformat(tupla_dati[0])
     id_utente = tupla_dati[1]
     if scadenza > datetime.now().replace(microsecond=0):
+        conn.close()
         return id_utente
     else:
         conn.close()
