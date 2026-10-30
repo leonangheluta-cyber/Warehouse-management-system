@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from database import apri_connessione, crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente, controlla_token, controlla_ruolo_addetto_responsabile, controlla_ruolo_responsabile
@@ -35,12 +35,11 @@ class LoginUtente(BaseModel):
 crea_tabella()
 
 @app.post("/utenti")
-def nuovo_utente(nuovo: Utente, authorization: str | None = Header(default = None)):
+def nuovo_utente(nuovo: Utente, id_utente: int = Depends(controlla_token)):
     username = nuovo.username.lower()
     ruolo = nuovo.ruolo.lower()
     nome = nuovo.nome.lower()
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente)
     if ruolo not in ["addetto", "responsabile"]:
         conn.close()
@@ -81,10 +80,9 @@ def login_utente(utente: LoginUtente):
         raise HTTPException(status_code=401, detail="Credenziali non valide")
 
 @app.post("/catalogo")
-def aggiungi_articolo(articolo: Articolo, authorization: str | None = Header(default = None)):
+def aggiungi_articolo(articolo: Articolo, id_utente: int = Depends(controlla_token)):
     data = str(datetime.now().replace(microsecond = 0))
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_addetto_responsabile(conn, id_utente)
     cursore = conn.execute("""
         INSERT INTO articoli (nome, prezzo, categoria, quantita, data_inserimento, data_ultimo_movimento)
@@ -96,9 +94,8 @@ def aggiungi_articolo(articolo: Articolo, authorization: str | None = Header(def
     return {"id": ultimo_id, "Prodotto": articolo}
 
 @app.get("/catalogo")
-def trova_prodotti(prezzo_inferiore_a: float = None, categoria: str = None, authorization: str | None = Header(default = None)):
+def trova_prodotti(prezzo_inferiore_a: float = None, categoria: str = None, id_utente: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_addetto_responsabile(conn, id_utente)
     cursore = conn.execute("SELECT * FROM articoli")
     righe = cursore.fetchall()
@@ -116,9 +113,8 @@ def trova_prodotti(prezzo_inferiore_a: float = None, categoria: str = None, auth
     return finale
 
 @app.get("/catalogo/{id_prodotto}")
-def cerca_id(id_prodotto: int, authorization: str | None = Header(default = None)):
+def cerca_id(id_prodotto: int, id_utente: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_addetto_responsabile(conn, id_utente)
     riga = controlla_articolo(conn, id_prodotto,)
     conn.close()
@@ -126,9 +122,8 @@ def cerca_id(id_prodotto: int, authorization: str | None = Header(default = None
     return prodotto
   
 @app.delete("/catalogo/{id_prodotto}")
-def rimuovi_prodotto(id_prodotto: int, authorization: str | None = Header(default = None)):
+def rimuovi_prodotto(id_prodotto: int, id_utente: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente)
     riga = controlla_articolo(conn, id_prodotto)
     controlla_movimento_prodotto(conn, id_prodotto)
@@ -139,9 +134,8 @@ def rimuovi_prodotto(id_prodotto: int, authorization: str | None = Header(defaul
     return prodotto_eliminato
 
 @app.patch("/catalogo/{id_prodotto}")
-def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, authorization: str | None = Header(default = None)):
+def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, id_utente: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente)
     controlla_articolo(conn, id_prodotto,)
     conn.execute("UPDATE articoli SET nome = coalesce(?, nome), prezzo = coalesce(?, prezzo), categoria = coalesce(?, categoria) WHERE id = ?", (articolo.nome, articolo.prezzo, articolo.categoria, id_prodotto))
@@ -153,10 +147,9 @@ def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, authorizatio
     return prodotto_finale
 
 @app.patch("/catalogo/{id_prodotto}/carico")
-def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int, authorization: str | None = Header(default = None)):
+def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int, id_utente: int = Depends(controlla_token)):
     data = str(datetime.now().replace(microsecond = 0))
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_addetto_responsabile(conn, id_utente)
     controlla_articolo(conn, id_prodotto,)
     controlla_utente(conn, id_utente)
@@ -171,10 +164,9 @@ def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int, author
     return prodotto_finale, movimento
 
 @app.patch("/catalogo/{id_prodotto}/prelievo")
-def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int, authorization: str | None = Header(default = None)):
+def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int, id_utente: int = Depends(controlla_token)):
     data = str(datetime.now().replace(microsecond = 0))
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_addetto_responsabile(conn, id_utente)
     riga = controlla_articolo(conn, id_prodotto)
     controlla_utente(conn, id_utente)
@@ -201,9 +193,8 @@ def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int, authorization: st
     return prodotto_finale, movimento
 
 @app.get("/movimenti")
-def movimenti_completo(data : str = None, authorization: str | None = Header(default = None)):
+def movimenti_completo(data : str = None, id_utente: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente)
     cursore = conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
                             LEFT JOIN utenti on movimenti.id_utente = utenti.id
@@ -218,13 +209,12 @@ def movimenti_completo(data : str = None, authorization: str | None = Header(def
     return lista_movimenti
 
 @app.get("/movimenti/{id_utente}")
-def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None, authorization: str | None = Header(default= None)):
-    if tipo_movimenti is not None and tipo_movimenti not in ["carico", "prelievo"]:
-        raise HTTPException(status_code = 400, detail = "Tipo di movimento non trovato")
+def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None, id_utente_autorizzato: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente_autorizzato = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente_autorizzato)
     controlla_utente(conn, id_utente)
+    if tipo_movimenti is not None and tipo_movimenti not in ["carico", "prelievo"]:
+        raise HTTPException(status_code = 400, detail = "Tipo di movimento non trovato")
     cursore = conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
                             LEFT JOIN utenti on movimenti.id_utente = utenti.id
                             LEFT JOIN articoli on movimenti.id_articolo = articoli.id
@@ -249,9 +239,8 @@ def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = Non
     return {"movimenti": lista_movimenti_utente, "totale" : totale_per_utente_prelievo+totale_per_utente_carico}
     
 @app.get("/utenti")
-def mostra_utenti(authorization: str | None = Header(default= None)):
+def mostra_utenti(id_utente: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente)
     cursore_utenti = conn.execute("SELECT * FROM utenti")
     lista_utenti = cursore_utenti.fetchall()
@@ -263,18 +252,16 @@ def mostra_utenti(authorization: str | None = Header(default= None)):
     return lista_finale
 
 @app.get("/utenti/{id_utente}")
-def cerca_utente(id_utente: int, authorization: str | None = Header(default = None)):
+def cerca_utente(id_utente: int, id_utente_autorizzato: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente_autorizzato = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente_autorizzato)
     riga_utente = controlla_utente(conn, id_utente)
     conn.close()
     return {"id": riga_utente[0], "nome": riga_utente[1]}
 
 @app.delete("/utenti/{id_utente}")
-def rimuovi_utente(id_utente: int, authorization: str | None = Header(default = None)):
+def rimuovi_utente(id_utente: int, id_utente_autorizzato: int = Depends(controlla_token)):
     conn = apri_connessione()
-    id_utente_autorizzato = controlla_token(conn, authorization)
     controlla_ruolo_responsabile(conn, id_utente_autorizzato)
     riga_utente = controlla_utente(conn, id_utente)
     controlla_movimento_utente(conn, id_utente)

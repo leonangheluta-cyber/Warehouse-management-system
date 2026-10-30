@@ -81,14 +81,14 @@ def test_token_mancante_rotta_aggiungi_articolo():
     dati = PRODOTTO_VALIDO.copy()
     risposta = client.post("/catalogo", json=dati)
     assert risposta.status_code == 401
-    assert risposta.json()["detail"] == "Token mancante"
+    assert risposta.json()["detail"] == "Not authenticated"
 
 def test_bearer_diverso_rotta_aggiungi_articolo():
     dati = PRODOTTO_VALIDO.copy()
     token = registra_e_login()
     risposta = client.post("/catalogo", json=dati, headers={"Authorization": f"Ciao {token}"})
     assert risposta.status_code == 401
-    assert risposta.json()["detail"] == "Token mancante"
+    assert risposta.json()["detail"] == "Not authenticated"
 
 def test_token_non_valido_rotta_aggiungi_articolo():
     dati = PRODOTTO_VALIDO.copy()
@@ -105,7 +105,7 @@ def test_token_scaduto_rotta_aggiungi_articolo():
 def test_nuovo_utente_password_corta():
     dati = UTENTE_VALIDO.copy()
     dati["password"] = "a" 
-    risposta = client.post("/utenti", json=dati)
+    risposta = client.post("/utenti", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "password"]
     assert risposta.json()["detail"][0]["type"] == "string_too_short"
@@ -168,7 +168,7 @@ def test_get_prodotto_cancellato_funzione_fixture():
     assert risposta.json()["detail"] == "Articolo non trovato"
 
 def test_utente_corto():
-    risposta = client.post("/utenti", json = {"nome": "a", "password": "cane12345"})
+    risposta = client.post("/utenti", json = {"nome": "a", "password": "cane12345"}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "nome"]
     assert risposta.json()["detail"][0]["type"] == "string_too_short"
@@ -176,7 +176,7 @@ def test_utente_corto():
 def test_aggiungi_articolo_nome_corto():
     dati = PRODOTTO_VALIDO.copy()
     dati["nome"] = "a"
-    risposta = client.post("/catalogo", json=dati)
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "nome"]
     assert risposta.json()["detail"][0]["type"] == "string_too_short"
@@ -184,7 +184,7 @@ def test_aggiungi_articolo_nome_corto():
 def test_aggiungi_articolo_prezzo_zero():
     dati = PRODOTTO_VALIDO.copy()
     dati["prezzo"] = 0
-    risposta = client.post("/catalogo", json=dati)
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "prezzo"]
     assert risposta.json()["detail"][0]["type"] == "greater_than"
@@ -192,7 +192,7 @@ def test_aggiungi_articolo_prezzo_zero():
 def test_aggiungi_articolo_categoria_corta():
     dati = PRODOTTO_VALIDO.copy()
     dati["categoria"] = "a"
-    risposta = client.post("/catalogo", json=dati)
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "categoria"]
     assert risposta.json()["detail"][0]["type"] == "string_too_short"
@@ -200,7 +200,7 @@ def test_aggiungi_articolo_categoria_corta():
 def test_aggiungi_articolo_quantita_zero():
     dati = PRODOTTO_VALIDO.copy()
     dati["quantita"] = 0
-    risposta = client.post("/catalogo", json=dati)
+    risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 422
     assert risposta.json()["detail"][0]["loc"] == ["body", "quantita"]
     assert risposta.json()["detail"][0]["type"] == "greater_than"
