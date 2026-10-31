@@ -22,6 +22,13 @@ def apri_connessione():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
+def apri_db():
+    conn = apri_connessione()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
 def crea_tabella():
     conn=apri_connessione()
     conn.execute("""
@@ -73,7 +80,6 @@ def controlla_articolo(conn, id_prodotto):
     cursore=conn.execute("SELECT * FROM articoli WHERE id=?", (id_prodotto, ))
     riga_selezionata=cursore.fetchone()
     if riga_selezionata is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="Articolo non trovato")
     return riga_selezionata
 
@@ -81,7 +87,6 @@ def controlla_utente(conn, id_utente):
     cursore=conn.execute("SELECT * FROM utenti WHERE id = ?", (id_utente, ))
     riga_selezionata=cursore.fetchone()
     if riga_selezionata is None:
-        conn.close()
         raise HTTPException(status_code=404, detail="Utente non trovato")
     return riga_selezionata
 
@@ -89,14 +94,12 @@ def controlla_movimento_prodotto(conn, id_prodotto):
     cursore=conn.execute("SELECT count(*) FROM movimenti WHERE id_articolo = ?", (id_prodotto, ))
     riga_selezionata=cursore.fetchone()
     if riga_selezionata[0] > 0:
-        conn.close()
         raise HTTPException(status_code=409, detail="Impossibile eliminare il prodotto: presenta dei movimenti")
 
 def controlla_movimento_utente(conn, id_utente):
     cursore=conn.execute("SELECT count(*) FROM movimenti WHERE id_utente = ?", (id_utente, ))
     riga_selezionata=cursore.fetchone()
     if riga_selezionata[0] > 0:
-        conn.close()
         raise HTTPException(status_code=409, detail="Impossibile eliminare l'utente: presenta dei movimenti")
     
 def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_movimento):
@@ -108,36 +111,29 @@ def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_m
     riga_finale=spacchetta_riga_movimento(riga_movimento)
     return riga_finale
 
-def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer)):
-    conn = apri_connessione()
+def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), conn: sqlite3.Connection = Depends(apri_db)):
     token = credenziali.credentials
     cursore = conn.execute("SELECT scadenza, id_utente FROM sessioni WHERE token = ?", (token, ))
     tupla_dati = cursore.fetchone()
     if tupla_dati is None:
-        conn.close()
         raise HTTPException(status_code=401, detail="Token non valido")
     scadenza = datetime.fromisoformat(tupla_dati[0])
     id_utente = tupla_dati[1]
     if scadenza > datetime.now().replace(microsecond=0):
-        conn.close()
         return id_utente
     else:
-        conn.close()
         raise HTTPException(status_code=401, detail="Token scaduto")
 
-def controlla_ruolo_addetto_responsabile(conn, id_utente):
+def controlla_ruolo_addetto_responsabile(id_utente: int = Depends(controlla_token), conn: sqlite3.Connection = Depends(apri_db)):
     cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
     ruolo = cursore.fetchone()
     if ruolo[0] not in ["responsabile", "addetto"]:
-        conn.close()
         raise HTTPException(status_code=403, detail="Richiesta negata")
+    return id_utente
 
-def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token)):
-    conn = apri_connessione()
+def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token), conn: sqlite3.Connection = Depends(apri_db)):
     cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
     ruolo = cursore.fetchone()
     if ruolo[0] != "responsabile":
-        conn.close()
         raise HTTPException(status_code=403, detail="Richiesta negata")
-    conn.close()
     return id_utente

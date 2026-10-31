@@ -264,8 +264,7 @@ def test_trova_prodotti_filtro_prezzo():
         assert riga["prezzo"]<=50
 
 def test_carico_quantita_valida():
-    token = registra_e_login()
-    risposta = client.patch("/catalogo/1/carico", json={"quantita": 5}, headers={"Authorization": f"Bearer {token}"} )
+    risposta = client.patch("/catalogo/1/carico", json={"quantita": 5}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
     assert risposta.json()[1]["quantita"] == 5
 
