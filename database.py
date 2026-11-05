@@ -6,6 +6,9 @@ from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
 from pwdlib import PasswordHash
+from sqlalchemy import select, create_engine, Numeric, ForeignKey, event
+from sqlalchemy.orm import Mapped, mapped_column, Session, DeclarativeBase, relationship
+from decimal import Decimal
 
 schema_bearer = HTTPBearer()
 password_hash = PasswordHash.recommended()
@@ -16,59 +19,80 @@ hash_password_gestionale = password_hash.hash(password_gestionale)
 
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB = os.path.join(CARTELLA, "script_gestionale_magazzino.db")
+PERCORSO_DB_ORM = os.path.join(CARTELLA, "gestionale_orm.db")
 
+engine = create_engine(f"sqlite+pysqlite:///{PERCORSO_DB_ORM}", echo=True)
+
+@event.listens_for(engine, "connect")
+def attiva_foreign_keys(connessione_dbapi, record_connessione):
+    cursore = connessione_dbapi.cursor()
+    cursore.execute("PRAGMA foreign_keys = ON")
+    cursore.close()
+
+class Base(DeclarativeBase):
+    pass
+
+class ArticoloORM(Base):
+    __tablename__ = "articoli"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str]
+    prezzo: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    categoria: Mapped[str]
+    quantita: Mapped[int]
+    data_inserimento: Mapped[str]
+    data_ultimo_movimento: Mapped[str] 
+    movimenti: Mapped[list["MovimentoORM"]] = relationship(back_populates="articolo")
+
+class UtenteORM(Base):
+    __tablename__ = "utenti"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str]
+    hash_utente: Mapped[str] = mapped_column("hash")
+    username: Mapped[str] = mapped_column(unique=True)
+    ruolo: Mapped[str]
+    movimenti: Mapped[list["MovimentoORM"]] = relationship(back_populates="utente")
+    sessioni: Mapped[list["SessioneORM"]] = relationship(back_populates="utente", cascade="all, delete-orphan")
+
+class MovimentoORM(Base):
+    __tablename__ = "movimenti"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    id_utente: Mapped[int] = mapped_column(ForeignKey("utenti.id"))
+    id_articolo: Mapped[int] = mapped_column(ForeignKey("articoli.id"))
+    quantita: Mapped[int]
+    tipo: Mapped[str]
+    data: Mapped[str]
+    giacenza_dopo_movimento: Mapped[int] 
+    utente: Mapped["UtenteORM"] = relationship(back_populates="movimenti")
+    articolo: Mapped["ArticoloORM"] = relationship(back_populates="movimenti")
+
+class SessioneORM(Base):
+    __tablename__ = "sessioni"
+    id_utente: Mapped[int] = mapped_column(ForeignKey("utenti.id"))
+    token: Mapped[str] = mapped_column(primary_key=True)
+    scadenza: Mapped[str]
+    utente: Mapped["UtenteORM"] = relationship(back_populates="sessioni")
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    query_responsabile = select(UtenteORM).where(UtenteORM.username == "leon.l")
+    reaponsabile_trovato = session.scalars(query_responsabile).one_or_none()
+    if reaponsabile_trovato is None:
+        utente_responsabile = UtenteORM(nome = "Leon", hash_utente = hash_password_gestionale, username = "leon.l", ruolo = "responsabile")
+        session.add(utente_responsabile)
+        session.commit()
+"""
 def apri_connessione():
     conn=sqlite3.connect(PERCORSO_DB)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
-
+"""
 def apri_db():
-    conn = apri_connessione()
-    try:
-        yield conn
-    finally:
-        conn.close()
+    with Session(engine) as session:
+        yield session
 
-def crea_tabella():
-    conn=apri_connessione()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS articoli (
-            id INTEGER PRIMARY KEY,
-            nome TEXT,
-            prezzo REAL,
-            categoria TEXT,
-            quantita INTEGER,
-            data_inserimento TEXT,
-            data_ultimo_movimento TEXT )""")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS utenti (
-            id INTEGER PRIMARY KEY, 
-            nome TEXT,
-            username TEXT UNIQUE,
-            ruolo TEXT,
-            hash TEXT)""")
-    conn.execute("INSERT OR IGNORE INTO utenti (nome, hash, username, ruolo) VALUES (?, ?, ?, ?)", ("Leon",hash_password_gestionale, "leon.l", "responsabile"))
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS movimenti (
-            id INTEGER PRIMARY KEY, 
-            id_utente INTEGER,
-            id_articolo INTEGER,
-            quantita INTEGER,
-            tipo TEXT, 
-            data TEXT,
-            giacenza_dopo_movimento INTEGER, 
-            FOREIGN KEY (id_utente) REFERENCES utenti(id), 
-            FOREIGN KEY (id_articolo) REFERENCES articoli(id))""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS sessioni (
-            id_utente INTEGER,
-            token TEXT PRIMARY KEY,
-            scadenza TEXT,
-            FOREIGN KEY (id_utente) REFERENCES utenti(id))""")
-    conn.commit()
-    conn.close()
-
-def spacchetta_riga_articolo(riga):
-    return {"id": riga[0], "nome": riga[1], "prezzo": riga[2], "categoria": riga[3], "quantita": riga[4], "data_inserimento": riga[5], "data_ultimo_movimento": riga[6]}
+def spacchetta_articolo(articolo):
+    return {"id": articolo.id, "nome": articolo.nome, "prezzo": articolo.prezzo, "categoria": articolo.categoria, "quantita": articolo.quantita, "data_inserimento": articolo.data_inserimento, "data_ultimo_movimento": articolo.data_ultimo_movimento}
 
 def spacchetta_riga_movimento(riga):
     return {"id_movimento": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5], "giacenza_post_movimento": riga[6]}
@@ -76,12 +100,12 @@ def spacchetta_riga_movimento(riga):
 def spacchetta_movimenti_completo(riga):
     return {"id_movimento": riga[0], "id_utente": riga[1], "nome_utente": riga[2], "quantita": riga[3], "movimento": riga[4], "articolo": riga[5], "qta_post_movimento": riga[6], "data_movimento": riga[7]}
 
-def controlla_articolo(conn, id_prodotto):
-    cursore=conn.execute("SELECT * FROM articoli WHERE id=?", (id_prodotto, ))
-    riga_selezionata=cursore.fetchone()
-    if riga_selezionata is None:
+def controlla_articolo(id_prodotto: int, session: Session = Depends(apri_db)):
+    query_prodotto = select(ArticoloORM).where(ArticoloORM.id == id_prodotto)
+    articolo_trovato = session.scalars(query_prodotto).one_or_none()
+    if articolo_trovato is None:
         raise HTTPException(status_code=404, detail="Articolo non trovato")
-    return riga_selezionata
+    return articolo_trovato
 
 def controlla_utente(conn, id_utente):
     cursore=conn.execute("SELECT * FROM utenti WHERE id = ?", (id_utente, ))
@@ -111,29 +135,36 @@ def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_m
     riga_finale=spacchetta_riga_movimento(riga_movimento)
     return riga_finale
 
-def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), conn: sqlite3.Connection = Depends(apri_db)):
+def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), session: Session = Depends(apri_db)):
     token = credenziali.credentials
-    cursore = conn.execute("SELECT scadenza, id_utente FROM sessioni WHERE token = ?", (token, ))
-    tupla_dati = cursore.fetchone()
-    if tupla_dati is None:
+    query_sessione = select(SessioneORM).where(SessioneORM.token == token)
+    sessione_trovata = session.scalars(query_sessione).one_or_none()
+    if sessione_trovata is None:
         raise HTTPException(status_code=401, detail="Token non valido")
-    scadenza = datetime.fromisoformat(tupla_dati[0])
-    id_utente = tupla_dati[1]
+    scadenza = datetime.fromisoformat(sessione_trovata.scadenza)
     if scadenza > datetime.now().replace(microsecond=0):
-        return id_utente
+        return sessione_trovata.id_utente
     else:
         raise HTTPException(status_code=401, detail="Token scaduto")
 
-def controlla_ruolo_addetto_responsabile(id_utente: int = Depends(controlla_token), conn: sqlite3.Connection = Depends(apri_db)):
-    cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
-    ruolo = cursore.fetchone()
-    if ruolo[0] not in ["responsabile", "addetto"]:
-        raise HTTPException(status_code=403, detail="Richiesta negata")
-    return id_utente
+def controlla_ruolo_addetto_responsabile(id_utente: int = Depends(controlla_token), session: Session = Depends(apri_db)):
+    query_utente = select(UtenteORM).where(UtenteORM.id == id_utente)
+    utente_trovato = session.scalars(query_utente).one_or_none()
+    if utente_trovato is not None:
+        if utente_trovato.ruolo not in ["addetto", "responsabile"]:
+            raise HTTPException(status_code=403, detail="Azione negata")
+        else:
+            return id_utente
+    else:
+        raise HTTPException(status_code=401, detail="Utente non trovato")
 
-def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token), conn: sqlite3.Connection = Depends(apri_db)):
-    cursore = conn.execute("SELECT ruolo FROM utenti WHERE id = ?", (id_utente, ))
-    ruolo = cursore.fetchone()
-    if ruolo[0] != "responsabile":
-        raise HTTPException(status_code=403, detail="Richiesta negata")
-    return id_utente
+def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token), session: Session = Depends(apri_db)):
+    query_responsabile = select(UtenteORM).where(UtenteORM.id == id_utente)
+    responsabile_trovato = session.scalars(query_responsabile).one_or_none()
+    if responsabile_trovato is not None:
+        if responsabile_trovato.ruolo != "responsabile":
+            raise HTTPException(status_code=403, detail="Azione negata")
+        else:
+            return id_utente
+    else:
+        raise HTTPException(status_code=401, detail="Utente non trovato")
