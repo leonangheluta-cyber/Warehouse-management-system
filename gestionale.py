@@ -2,7 +2,9 @@ from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 import sqlite3
-from database import crea_tabella, spacchetta_riga_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente, controlla_token, controlla_ruolo_addetto_responsabile, controlla_ruolo_responsabile, apri_db
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from database import spacchetta_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente, controlla_token, controlla_ruolo_addetto_responsabile, controlla_ruolo_responsabile, apri_db, UtenteORM, ArticoloORM, MovimentoORM, SessioneORM
 import secrets
 from pwdlib import PasswordHash
 password_hash = PasswordHash.recommended()
@@ -33,85 +35,74 @@ class LoginUtente(BaseModel):
     username: str 
     password: str 
 
-crea_tabella()
-
 @app.post("/utenti")
-def nuovo_utente(nuovo: Utente, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
+def nuovo_utente(nuovo: Utente, id_responsabile: int = Depends(controlla_ruolo_responsabile), session: Session = Depends(apri_db)):
     username = nuovo.username.lower()
+    query_utente = select(UtenteORM).where(UtenteORM.username == username)
+    utente_trovato = session.scalars(query_utente).one_or_none()
+    if utente_trovato is not None:
+        raise HTTPException(status_code=409, detail="Username gia presente")
     ruolo = nuovo.ruolo.lower()
-    nome = nuovo.nome.lower()
     if ruolo not in ["addetto", "responsabile"]:
         raise HTTPException(status_code=400, detail="Inserire addetto o responsabile")
-    cursore_username = conn.execute("SELECT * FROM utenti WHERE username = ?", (username, ))
-    controllo_username = cursore_username.fetchone()
-    if controllo_username is not None:
-        raise HTTPException(status_code=409, detail="Username gia in uso")
     hash_utente = password_hash.hash(nuovo.password)
-    cursore = conn.execute("INSERT INTO utenti (nome, username, ruolo, hash) VALUES (?, ?, ?, ?)", (nome, username, ruolo, hash_utente))
-    riga_nuovo_utente = cursore.lastrowid
-    conn.commit()
-    return {"id": riga_nuovo_utente, "nome": nome, "username": username, "ruolo": ruolo}
+    nuovo_utente = UtenteORM(nome = nuovo.nome, hash_utente = hash_utente, username = username, ruolo = ruolo)
+    session.add(nuovo_utente)
+    session.commit()
+    return {"ID utente": nuovo_utente.id, "Nome": nuovo_utente.nome, "Username": nuovo_utente.username, "Ruolo": nuovo_utente.ruolo}
 
 @app.post("/login")
-def login_utente(utente: LoginUtente, conn: sqlite3.Connection = Depends(apri_db)):
+def login_utente(utente: LoginUtente, session: Session = Depends(apri_db)):
     username = utente.username.lower()
-    cursore = conn.execute("SELECT hash, utenti.id FROM utenti WHERE username = ?", (username, ))
-    riga = cursore.fetchone()
-    if riga is None or riga[0] is None:
+    query_utente = select(UtenteORM).where(UtenteORM.username == username)
+    utente_trovato = session.scalars(query_utente).one_or_none()
+    if utente_trovato is None:
         raise HTTPException(status_code=401, detail="Credenziali non valide")
-    hash_utente = riga[0]
-    id_utente = riga[1]
-    verifica = password_hash.verify(utente.password, hash_utente)
-    if verifica:
-        token = secrets.token_urlsafe(32)
-        scadenza = datetime.now().replace(microsecond=0) + timedelta(hours=8)
-        conn.execute("INSERT INTO sessioni (id_utente, token, scadenza) VALUES (?, ?, ?)", (id_utente, token, str(scadenza)))
-        conn.commit()
-        return {"token": token}
+    verifica_hash = password_hash.verify(utente.password, utente_trovato.hash_utente)
+    if verifica_hash:
+        token_utente = secrets.token_urlsafe(32)
+        scadenza_token = datetime.now().replace(microsecond=0) + timedelta(hours=8)
+        nuova_sessione = SessioneORM(utente = utente_trovato, token = token_utente, scadenza = str(scadenza_token))
+        session.add(nuova_sessione)
+        session.commit()
+        return {"token": token_utente}
     else:
-        raise HTTPException(status_code=401, detail="Credenziali non valide")
+        raise HTTPException(401, detail="Credenziali non valide")
 
 @app.post("/catalogo")
-def aggiungi_articolo(articolo: Articolo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    data = str(datetime.now().replace(microsecond = 0))
-    cursore = conn.execute("""
-        INSERT INTO articoli (nome, prezzo, categoria, quantita, data_inserimento, data_ultimo_movimento)
-        VALUES (?, ?, ?, ?, ?, ? )""", 
-        (articolo.nome, articolo.prezzo, articolo.categoria, articolo.quantita, data, data))
-    ultimo_id = cursore.lastrowid
-    conn.commit()
-    return {"id": ultimo_id, "Prodotto": articolo}
+def aggiungi_articolo(articolo: Articolo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), session: Session = Depends(apri_db)):
+    data = str(datetime.now().replace(microsecond=0))
+    nuovo_articolo = ArticoloORM(nome = articolo.nome, prezzo = articolo.prezzo, categoria = articolo.categoria, quantita = articolo.quantita, data_inserimento = data, data_ultimo_movimento = data)
+    session.add(nuovo_articolo)
+    session.commit()
+    return spacchetta_articolo(nuovo_articolo)
 
 @app.get("/catalogo")
-def trova_prodotti(prezzo_inferiore_a: float = None, categoria: str = None, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    cursore = conn.execute("SELECT * FROM articoli")
-    righe = cursore.fetchall()
-    lista_prodotti = []
-    for riga in righe:
-        dizionario_prodotti = spacchetta_riga_articolo(riga)
-        lista_prodotti.append(dizionario_prodotti)
-    finale = []
-    for prodotto in lista_prodotti:
-        passa_categoria  =  categoria is None or categoria.lower() == prodotto["categoria"].lower()
-        passa_prezzo = prezzo_inferiore_a is None or prezzo_inferiore_a>=prodotto["prezzo"]
-        if passa_categoria and passa_prezzo:
-            finale.append(prodotto)
-    return finale
+def trova_prodotti(prezzo_inferiore_a: float = None, categoria: str = None, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), session: Session = Depends(apri_db)):
+    query_catalogo = select(ArticoloORM)
+    if categoria is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.categoria == categoria.lower())
+    if prezzo_inferiore_a is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.prezzo <= prezzo_inferiore_a)
+    catalogo_trovato = session.scalars(query_catalogo).all()
+    lista_articoli = []
+    for articolo in catalogo_trovato:
+        articolo_spacchettato = spacchetta_articolo(articolo)
+        lista_articoli.append(articolo_spacchettato)
+    return lista_articoli
 
 @app.get("/catalogo/{id_prodotto}")
-def cerca_id(id_prodotto: int, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    riga = controlla_articolo(conn, id_prodotto,)
-    prodotto = spacchetta_riga_articolo(riga)
-    return prodotto
-  
+def cerca_id(id_utente: int = Depends(controlla_ruolo_addetto_responsabile), prodotto: ArticoloORM = Depends(controlla_articolo)):
+    return spacchetta_articolo(prodotto)
+
 @app.delete("/catalogo/{id_prodotto}")
-def rimuovi_prodotto(id_prodotto: int, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    riga = controlla_articolo(conn, id_prodotto)
-    controlla_movimento_prodotto(conn, id_prodotto)
-    prodotto_eliminato = spacchetta_riga_articolo(riga)
-    conn.execute("DELETE FROM articoli WHERE id = ?", (id_prodotto, ))
-    conn.commit()
-    return prodotto_eliminato
+def rimuovi_prodotto(id_responsabile: int = Depends(controlla_ruolo_responsabile), prodotto: ArticoloORM = Depends(controlla_articolo), session: Session = Depends(apri_db)):
+    if not prodotto.movimenti:
+        session.delete(prodotto)
+        session.commit()
+    else:
+        raise HTTPException(status_code=409, detail="L'articolo presenta movimenti")
+    return spacchetta_articolo(prodotto)
 
 @app.patch("/catalogo/{id_prodotto}")
 def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
