@@ -1,4 +1,3 @@
-import sqlite3
 import os
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -18,7 +17,6 @@ password_gestionale = os.environ.get("PASSWORD_RESPONSABILE")
 hash_password_gestionale = password_hash.hash(password_gestionale)
 
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
-PERCORSO_DB = os.path.join(CARTELLA, "script_gestionale_magazzino.db")
 PERCORSO_DB_ORM = os.path.join(CARTELLA, "gestionale_orm.db")
 
 engine = create_engine(f"sqlite+pysqlite:///{PERCORSO_DB_ORM}", echo=True)
@@ -81,12 +79,7 @@ with Session(engine) as session:
         utente_responsabile = UtenteORM(nome = "Leon", hash_utente = hash_password_gestionale, username = "leon.l", ruolo = "responsabile")
         session.add(utente_responsabile)
         session.commit()
-"""
-def apri_connessione():
-    conn=sqlite3.connect(PERCORSO_DB)
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-"""
+
 def apri_db():
     with Session(engine) as session:
         yield session
@@ -94,11 +87,11 @@ def apri_db():
 def spacchetta_articolo(articolo):
     return {"id": articolo.id, "nome": articolo.nome, "prezzo": articolo.prezzo, "categoria": articolo.categoria, "quantita": articolo.quantita, "data_inserimento": articolo.data_inserimento, "data_ultimo_movimento": articolo.data_ultimo_movimento}
 
-def spacchetta_riga_movimento(riga):
-    return {"id_movimento": riga[0], "id_utente": riga[1], "id_articolo": riga[2], "quantita": riga[3], "tipo": riga[4], "data": riga[5], "giacenza_post_movimento": riga[6]}
+def spacchetta_movimento(movimento):
+    return {"id_movimento": movimento.id, "id_utente": movimento.id_utente, "id_articolo": movimento.id_articolo, "quantita": movimento.quantita, "tipo": movimento.tipo, "data": movimento.data, "giacenza_post_movimento": movimento.giacenza_dopo_movimento}
 
-def spacchetta_movimenti_completo(riga):
-    return {"id_movimento": riga[0], "id_utente": riga[1], "nome_utente": riga[2], "quantita": riga[3], "movimento": riga[4], "articolo": riga[5], "qta_post_movimento": riga[6], "data_movimento": riga[7]}
+def spacchetta_movimenti_completo(movimento):
+    return {"id_movimento": movimento.id, "id_utente": movimento.id_utente, "nome_utente": movimento.utente.nome, "quantita": movimento.quantita, "movimento": movimento.tipo, "articolo": movimento.articolo.nome, "qta_post_movimento": movimento.giacenza_dopo_movimento, "data_movimento": movimento.data}
 
 def controlla_articolo(id_prodotto: int, session: Session = Depends(apri_db)):
     query_prodotto = select(ArticoloORM).where(ArticoloORM.id == id_prodotto)
@@ -107,33 +100,16 @@ def controlla_articolo(id_prodotto: int, session: Session = Depends(apri_db)):
         raise HTTPException(status_code=404, detail="Articolo non trovato")
     return articolo_trovato
 
-def controlla_utente(conn, id_utente):
-    cursore=conn.execute("SELECT * FROM utenti WHERE id = ?", (id_utente, ))
-    riga_selezionata=cursore.fetchone()
-    if riga_selezionata is None:
+def controlla_utente(id_utente: int, session: Session = Depends(apri_db)):
+    query_utente = select(UtenteORM).where(UtenteORM.id == id_utente)
+    utente_trovato = session.scalars(query_utente).one_or_none()
+    if utente_trovato is None:
         raise HTTPException(status_code=404, detail="Utente non trovato")
-    return riga_selezionata
-
-def controlla_movimento_prodotto(conn, id_prodotto):
-    cursore=conn.execute("SELECT count(*) FROM movimenti WHERE id_articolo = ?", (id_prodotto, ))
-    riga_selezionata=cursore.fetchone()
-    if riga_selezionata[0] > 0:
-        raise HTTPException(status_code=409, detail="Impossibile eliminare il prodotto: presenta dei movimenti")
-
-def controlla_movimento_utente(conn, id_utente):
-    cursore=conn.execute("SELECT count(*) FROM movimenti WHERE id_utente = ?", (id_utente, ))
-    riga_selezionata=cursore.fetchone()
-    if riga_selezionata[0] > 0:
-        raise HTTPException(status_code=409, detail="Impossibile eliminare l'utente: presenta dei movimenti")
+    return utente_trovato
     
-def crea_movimento(conn, id_utente, id_articolo, quantita, tipo, giacenza_post_movimento):
-    data=str(datetime.now().replace(microsecond=0))
-    cursore=conn.execute("""INSERT INTO movimenti (id_utente, id_articolo, quantita, tipo, data, giacenza_dopo_movimento) VALUES (?, ?, ?, ?, ?, ?)""", (id_utente, id_articolo, quantita, tipo, data, giacenza_post_movimento))
-    id_riga=cursore.lastrowid
-    cursore_riga=conn.execute("SELECT * FROM movimenti WHERE id = ?", (id_riga, ))
-    riga_movimento=cursore_riga.fetchone()
-    riga_finale=spacchetta_riga_movimento(riga_movimento)
-    return riga_finale
+def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_movimento, tipo_movimento, data_movimento, giacenza_post):
+    nuovo_movimento = MovimentoORM(id_utente = id_utente_movimento, id_articolo = id_articolo_movimento, quantita = quantita_movimento, tipo = tipo_movimento, data = data_movimento, giacenza_dopo_movimento = giacenza_post)
+    return nuovo_movimento
 
 def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), session: Session = Depends(apri_db)):
     token = credenziali.credentials

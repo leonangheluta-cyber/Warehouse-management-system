@@ -1,10 +1,9 @@
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
-import sqlite3
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from database import spacchetta_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_movimento_prodotto, controlla_movimento_utente, controlla_token, controlla_ruolo_addetto_responsabile, controlla_ruolo_responsabile, apri_db, UtenteORM, ArticoloORM, MovimentoORM, SessioneORM
+from database import spacchetta_articolo, controlla_articolo, controlla_utente, crea_movimento, spacchetta_movimenti_completo, controlla_ruolo_addetto_responsabile, controlla_ruolo_responsabile, apri_db, spacchetta_movimento, UtenteORM, ArticoloORM, MovimentoORM, SessioneORM
 import secrets
 from pwdlib import PasswordHash
 password_hash = PasswordHash.recommended()
@@ -72,7 +71,7 @@ def login_utente(utente: LoginUtente, session: Session = Depends(apri_db)):
 @app.post("/catalogo")
 def aggiungi_articolo(articolo: Articolo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), session: Session = Depends(apri_db)):
     data = str(datetime.now().replace(microsecond=0))
-    nuovo_articolo = ArticoloORM(nome = articolo.nome, prezzo = articolo.prezzo, categoria = articolo.categoria, quantita = articolo.quantita, data_inserimento = data, data_ultimo_movimento = data)
+    nuovo_articolo = ArticoloORM(nome = articolo.nome, prezzo = articolo.prezzo, categoria = articolo.categoria.lower(), quantita = articolo.quantita, data_inserimento = data, data_ultimo_movimento = data)
     session.add(nuovo_articolo)
     session.commit()
     return spacchetta_articolo(nuovo_articolo)
@@ -97,123 +96,96 @@ def cerca_id(id_utente: int = Depends(controlla_ruolo_addetto_responsabile), pro
 
 @app.delete("/catalogo/{id_prodotto}")
 def rimuovi_prodotto(id_responsabile: int = Depends(controlla_ruolo_responsabile), prodotto: ArticoloORM = Depends(controlla_articolo), session: Session = Depends(apri_db)):
-    if not prodotto.movimenti:
-        session.delete(prodotto)
-        session.commit()
-    else:
+    if prodotto.movimenti:
         raise HTTPException(status_code=409, detail="L'articolo presenta movimenti")
+    session.delete(prodotto)
+    session.commit()
     return spacchetta_articolo(prodotto)
 
 @app.patch("/catalogo/{id_prodotto}")
-def modifica_articolo(articolo: ModificaArticolo, id_prodotto: int, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    controlla_articolo(conn, id_prodotto,)
-    conn.execute("UPDATE articoli SET nome = coalesce(?, nome), prezzo = coalesce(?, prezzo), categoria = coalesce(?, categoria) WHERE id = ?", (articolo.nome, articolo.prezzo, articolo.categoria, id_prodotto))
-    cursore_aggiornato = conn.execute("SELECT * FROM articoli WHERE id = ?", (id_prodotto, ))
-    prodotto_aggiornato = cursore_aggiornato.fetchone()
-    conn.commit()
-    prodotto_finale = spacchetta_riga_articolo(prodotto_aggiornato)
-    return prodotto_finale
+def modifica_articolo(nuovo: ModificaArticolo, id_responsabile: int = Depends(controlla_ruolo_responsabile), articolo: ArticoloORM = Depends(controlla_articolo), session: Session = Depends(apri_db)):
+    if nuovo.nome is not None:
+        articolo.nome= nuovo.nome
+    if nuovo.prezzo is not None:
+        articolo.prezzo = nuovo.prezzo
+    if nuovo.categoria is not None:
+        articolo.categoria = nuovo.categoria.lower()
+    session.commit()
+    return spacchetta_articolo(articolo)
 
 @app.patch("/catalogo/{id_prodotto}/carico")
-def carica_quantita_articolo(richiesta: CaricoPrelievo, id_prodotto: int, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    data = str(datetime.now().replace(microsecond = 0))
-    controlla_articolo(conn, id_prodotto,)
-    controlla_utente(conn, id_utente)
-    conn.execute("""UPDATE articoli SET quantita = quantita + ?, data_ultimo_movimento = ? WHERE id = ?""", (richiesta.quantita, data, id_prodotto))
-    cursore_aggiornato = conn.execute("SELECT * FROM articoli WHERE id = ?", (id_prodotto, ))
-    prodotto_aggiornato = cursore_aggiornato.fetchone()
-    giacenza_aggiornata = prodotto_aggiornato[4]
-    movimento = crea_movimento(conn, id_utente, id_prodotto, richiesta.quantita, "carico", giacenza_aggiornata)
-    conn.commit()
-    prodotto_finale = spacchetta_riga_articolo(prodotto_aggiornato)
-    return prodotto_finale, movimento
+def carica_quantita_articolo(richiesta: CaricoPrelievo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), articolo: ArticoloORM = Depends(controlla_articolo), session: Session = Depends(apri_db)):
+    data_movimento = str(datetime.now().replace(microsecond=0))
+    articolo.quantita += richiesta.quantita
+    articolo.data_ultimo_movimento = data_movimento
+    nuovo_movimento = crea_movimento(id_utente, articolo.id, richiesta.quantita, "carico", data_movimento, articolo.quantita)
+    session.add(nuovo_movimento)
+    session.commit()
+    return {"articolo": spacchetta_articolo(articolo), "movimento" : spacchetta_movimento(nuovo_movimento)}
 
 @app.patch("/catalogo/{id_prodotto}/prelievo")
-def preleva_merce(richiesta: CaricoPrelievo, id_prodotto: int, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    data = str(datetime.now().replace(microsecond = 0))
-    riga = controlla_articolo(conn, id_prodotto)
-    controlla_utente(conn, id_utente)
-    quantita_prodotto_attuale = riga[4]
-    if richiesta.quantita<quantita_prodotto_attuale:
-        quantita_prelevata = richiesta.quantita
+def preleva_merce(richiesta: CaricoPrelievo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), articolo: ArticoloORM = Depends(controlla_articolo), session: Session = Depends(apri_db)):
+    data_movimento = str(datetime.now().replace(microsecond=0))
+    if richiesta.quantita >= articolo.quantita:
+        rimanenza = richiesta.quantita - articolo.quantita
+        quantita_movimento = articolo.quantita
+        articolo.quantita = 0
     else:
-        quantita_prelevata = quantita_prodotto_attuale
-    conn.execute("""UPDATE articoli SET
-        quantita = CASE WHEN ? <= quantita THEN quantita - ? WHEN ? > quantita THEN 0 END,
-        data_ultimo_movimento = ?  WHERE id = ?""", (richiesta.quantita, richiesta.quantita, richiesta.quantita, data, id_prodotto))
-    cursore_aggiornato = conn.execute("SELECT * FROM articoli WHERE id = ?", (id_prodotto, ))
-    prodotto_aggiornato = cursore_aggiornato.fetchone()
-    giacenza_finale = prodotto_aggiornato[4]
-    movimento = crea_movimento(conn, id_utente, id_prodotto, quantita_prelevata, "prelievo", giacenza_finale)
-    conn.commit()
-    prodotto_finale = spacchetta_riga_articolo(prodotto_aggiornato)
-    if richiesta.quantita>quantita_prodotto_attuale:
-        calcolo_prelievo = richiesta.quantita-quantita_prodotto_attuale
-        prodotto_finale["mancanti"] = calcolo_prelievo
-        return prodotto_finale, movimento
-    prodotto_finale["mancanti"] = 0
-    return prodotto_finale, movimento
+        articolo.quantita -= richiesta.quantita
+        quantita_movimento = richiesta.quantita
+        rimanenza = 0
+    articolo.data_ultimo_movimento = data_movimento
+    nuovo_movimento = crea_movimento(id_utente, articolo.id, quantita_movimento, "prelievo", data_movimento, articolo.quantita)
+    session.add(nuovo_movimento)
+    session.commit()
+    return {"articolo": spacchetta_articolo(articolo), "movimento": spacchetta_movimento(nuovo_movimento), "da_prelevare": rimanenza}
 
 @app.get("/movimenti")
-def movimenti_completo(data : str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    cursore = conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
-                            LEFT JOIN utenti on movimenti.id_utente = utenti.id
-                            LEFT JOIN articoli on movimenti.id_articolo = articoli.id""")
-    movimenti = cursore.fetchall()
+def movimenti_completo(data : str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), session: Session = Depends(apri_db)):
+    query_movimenti = select(MovimentoORM)
+    if data is not None:
+        query_movimenti = query_movimenti.where(MovimentoORM.data.startswith(data))
+    movimenti = session.scalars(query_movimenti).all()
     lista_movimenti = []
-    for riga in movimenti:
-        if data is None or data == riga[7][:10]:
-            riga_spacchettata = spacchetta_movimenti_completo(riga)
-            lista_movimenti.append(riga_spacchettata)
+    for movimento in movimenti:
+        movimento_trovato = spacchetta_movimenti_completo(movimento)
+        lista_movimenti.append(movimento_trovato)
     return lista_movimenti
 
 @app.get("/movimenti/{id_utente}")
-def movimenti_utente(id_utente: int, tipo_movimenti: str = None, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    controlla_utente(conn, id_utente)
-    if tipo_movimenti is not None and tipo_movimenti not in ["carico", "prelievo"]:
-        raise HTTPException(status_code = 400, detail = "Tipo di movimento non trovato")
-    cursore = conn.execute("""SELECT movimenti.id, utenti.id, utenti.nome, movimenti.quantita, movimenti.tipo, articoli.nome, movimenti.giacenza_dopo_movimento, movimenti.data FROM movimenti
-                            LEFT JOIN utenti on movimenti.id_utente = utenti.id
-                            LEFT JOIN articoli on movimenti.id_articolo = articoli.id
-                            WHERE utenti.id = ? ORDER by movimenti.data""", (id_utente, ))
-    utente = cursore.fetchall()
-    lista_movimenti_utente = []
-    totale_per_utente_carico = 0
-    totale_per_utente_prelievo = 0
-    for riga in utente:
-        passa_data = data is None or data == riga[7][:10]
-        passa_tipo = tipo_movimenti is None or tipo_movimenti == riga[4]
-        if passa_tipo and passa_data:
-            if riga[4] =="carico":
-                totale_per_utente_carico+=riga[3]
-            else:
-                totale_per_utente_prelievo+=riga[3]
-            riga_utente = spacchetta_movimenti_completo(riga)
-            lista_movimenti_utente.append(riga_utente)
-    if tipo_movimenti is None:
-        return {"movimenti": lista_movimenti_utente, "totale_carico": totale_per_utente_carico, "totale_prelievo": totale_per_utente_prelievo}
-    return {"movimenti": lista_movimenti_utente, "totale" : totale_per_utente_prelievo+totale_per_utente_carico}
-    
+def movimenti_utente(tipo_movimenti: str = None, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente), session: Session = Depends(apri_db)):
+    query_movimenti = select(MovimentoORM).where(MovimentoORM.id_utente == utente.id)
+    if tipo_movimenti is not None:
+        if tipo_movimenti not in ["carico", "prelievo"]:
+            raise HTTPException(status_code=400, detail="Tipo movimento non valido")
+        query_movimenti = query_movimenti.where(MovimentoORM.tipo == tipo_movimenti)
+    if data is not None:
+        query_movimenti = query_movimenti.where(MovimentoORM.data.startswith(data))
+    movimenti = session.scalars(query_movimenti).all()
+    lista_movimenti = []
+    for movimento in movimenti:
+        movimento_trovato = spacchetta_movimento(movimento)
+        lista_movimenti.append(movimento_trovato)
+    return lista_movimenti
+
 @app.get("/utenti")
-def mostra_utenti(id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    cursore_utenti = conn.execute("SELECT * FROM utenti")
-    lista_utenti = cursore_utenti.fetchall()
-    lista_finale = []
-    for riga in lista_utenti:
-        utente = {"id": riga[0], "nome": riga[1]}
-        lista_finale.append(utente)
-    return lista_finale
+def mostra_utenti(id_responsabile: int = Depends(controlla_ruolo_responsabile), session: Session = Depends(apri_db)):
+    query_utenti = select(UtenteORM)
+    utenti_trovati = session.scalars(query_utenti).all()
+    lista_utenti = []
+    for utente in utenti_trovati:
+        utente_singolo = {"nome": utente.nome, "id": utente.id, "ruolo": utente.ruolo, "username": utente.username}
+        lista_utenti.append(utente_singolo)
+    return lista_utenti
 
 @app.get("/utenti/{id_utente}")
-def cerca_utente(id_utente: int, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    riga_utente = controlla_utente(conn, id_utente)
-    return {"id": riga_utente[0], "nome": riga_utente[1]}
+def cerca_utente(id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente), session: Session = Depends(apri_db)):
+    return {"nome": utente.nome, "id": utente.id, "ruolo": utente.ruolo, "username": utente.username}
 
 @app.delete("/utenti/{id_utente}")
-def rimuovi_utente(id_utente: int, id_responsabile: int = Depends(controlla_ruolo_responsabile), conn: sqlite3.Connection = Depends(apri_db)):
-    riga_utente = controlla_utente(conn, id_utente)
-    controlla_movimento_utente(conn, id_utente)
-    conn.execute("DELETE FROM sessioni WHERE id_utente = ?", (id_utente, ))
-    conn.execute("DELETE FROM utenti WHERE id = ?", (id_utente, ))
-    conn.commit()
-    return {"id": riga_utente[0], "nome": riga_utente[1]}
+def rimuovi_utente(id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente), session: Session = Depends(apri_db)):
+    if utente.movimenti:
+        raise HTTPException(status_code=409, detail="L'utente presenta movimenti")
+    session.delete(utente)
+    session.commit()
+    return {"utente eliminato": {"nome": utente.nome, "id": utente.id, "ruolo": utente.ruolo, "username": utente.username}}
