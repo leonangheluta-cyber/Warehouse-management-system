@@ -40,7 +40,9 @@ class ArticoloORM(Base):
     data_inserimento: Mapped[str]
     data_ultimo_movimento: Mapped[str] 
     movimenti: Mapped[list["MovimentoORM"]] = relationship(back_populates="articolo")
-
+    def __repr__(self):
+        return f"Nome articolo: {self.nome} | Prezzo: {self.prezzo} | Categoria: {self.categoria} | Quantita: {self.quantita} | Data inserimento: {self.data_inserimento} | Data ultimo movimento: {self.data_ultimo_movimento}"
+    
 class UtenteORM(Base):
     __tablename__ = "utenti"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -50,6 +52,8 @@ class UtenteORM(Base):
     ruolo: Mapped[str]
     movimenti: Mapped[list["MovimentoORM"]] = relationship(back_populates="utente")
     sessioni: Mapped[list["SessioneORM"]] = relationship(back_populates="utente", cascade="all, delete-orphan")
+    def __repr__(self):
+        return f"Nome: {self.nome} | Username: {self.username} | Ruolo: {self.ruolo}"
 
 class MovimentoORM(Base):
     __tablename__ = "movimenti"
