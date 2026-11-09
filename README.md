@@ -1,6 +1,6 @@
 # Warehouse Management API
 
-A small warehouse management backend built with **FastAPI** and **SQLite**, designed around
+A small warehouse management backend built with **FastAPI**, **SQLAlchemy** (ORM) and **SQLite**, designed around
 what I saw every day in 10 years of warehouse work.
 
 > **Status: work in progress.** Version 1 (items, loading, picking) and version 2
@@ -57,12 +57,19 @@ These are the decisions I'm most interested in, because they come from real ware
 - **Users are created only by a manager**, so nobody can register themselves as `responsabile`.
   The first manager is created at startup, with the password read from an environment variable
   (a `.env` file kept outside the project).
-- **Every query uses `?` placeholders** (parameterized queries), never f-strings, against SQL injection.
+- **No SQL built by hand**: every query goes through the SQLAlchemy ORM (`select(...).where(...)`),
+  which sends the values as bound parameters, never as text pasted into the SQL, against SQL injection.
 
 ### Code organization
 
-- `database.py` holds the connection, the tables, the authentication dependencies and the
-  helper functions (checks, row unpacking, movement creation); `gestionale.py` holds only the endpoints.
+- `database.py` holds the engine, the ORM models (one class per table, linked with `relationship`),
+  the session dependency, the authentication dependencies and the helper functions
+  (checks, object unpacking, movement creation); `gestionale.py` holds only the endpoints.
+- **One database session per request**, opened by a `yield` dependency and closed automatically
+  at the end of the request. FastAPI caches dependencies within a request, so the route and all
+  its checks (token, role, item lookup) share the same session and are saved by a single `commit`.
+- **Endpoints never return ORM objects directly**: they are unpacked into plain dictionaries,
+  so internal fields like the password hash can never end up in a response.
 
 ## Endpoints
 
@@ -82,22 +89,22 @@ All endpoints except `/login` require the header `Authorization: Bearer <token>`
 | `DELETE` | `/catalogo/{id_prodotto}` | manager | Delete an item (`409` if it has movements) |
 | `PATCH` | `/catalogo/{id_prodotto}/carico` | operator, manager | Load stock (records a movement) |
 | `PATCH` | `/catalogo/{id_prodotto}/prelievo` | operator, manager | Pick stock (records a movement, reports missing pieces) |
-| `GET` | `/movimenti` | manager | Full movement history with operator and item names (SQL `JOIN`), optional filter `data` (YYYY-MM-DD) |
+| `GET` | `/movimenti` | manager | Full movement history with operator and item names (through ORM relationships), optional filter `data` (YYYY-MM-DD) |
 | `GET` | `/movimenti/{id_utente}` | manager | Movements of one operator, optional filters `tipo_movimenti` (`carico` / `prelievo`) and `data`, with loaded and picked totals |
 
 ## Database
 
-Four tables in SQLite:
+Four tables in SQLite, defined as SQLAlchemy models and created automatically at startup:
 
 - `articoli`: id, name, price, category, quantity, insertion date, last movement date
 - `utenti`: id, name, username (unique, lowercase), role, password hash
 - `movimenti`: id, operator id, item id, quantity, type (`carico` / `prelievo`), date, stock after movement
-- `sessioni`: token, user id, expiry
+- `sessioni`: token, user id, expiry (deleted together with their user, via cascade)
 
 ## Run it locally
 
 ```bash
-pip install "fastapi[standard]" "pwdlib[argon2]" python-dotenv
+pip install "fastapi[standard]" sqlalchemy "pwdlib[argon2]" python-dotenv
 ```
 
 Create a file `~/Secret/.env` (outside the project, never committed) with the password
@@ -125,8 +132,10 @@ pip install pytest
 pytest
 ```
 
-The tests run on a separate database, recreated before every test by a pytest fixture,
-so each test starts from known data and never touches the real one. They cover the
+The tests run on a separate database: `app.dependency_overrides` replaces the session
+dependency with one connected to a test database, which a pytest fixture drops, recreates
+and fills with known data before every test, so each test starts from the same state and
+never touches the real one. Foreign keys are enabled on the test database too. They cover the
 normal cases and the edge ones: missing, invalid and expired tokens, wrong role,
 validation errors, missing resources, deletion of items and users with movements.
 
@@ -138,12 +147,14 @@ validation errors, missing resources, deletion of items and users with movements
 - [x] Login with session tokens and hashed passwords
 - [x] Roles (operator / manager)
 - [x] Authentication as FastAPI dependencies (`Depends` + `HTTPBearer`)
-- [ ] Operator role check as a dependency too (manager check already done)
-- [ ] Database connection as a `yield` dependency (one connection per request, closed automatically)
+- [x] Operator role check as a dependency too
+- [x] Database session as a `yield` dependency (one session per request, closed automatically)
+- [x] Migration to SQLAlchemy ORM (endpoints and tests)
 - [ ] `requirements.txt`
 - [ ] Record the initial stock of a new item as a movement
-- [ ] Migration to SQLAlchemy, then PostgreSQL and Docker
+- [ ] Test that foreign keys are really enforced by the database
+- [ ] PostgreSQL and Docker
 
 ## Tech stack
 
-Python · FastAPI · Pydantic · SQLite · pwdlib (Argon2) · python-dotenv · pytest
+Python · FastAPI · Pydantic · SQLAlchemy · SQLite · pwdlib (Argon2) · python-dotenv · pytest
