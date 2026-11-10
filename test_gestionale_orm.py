@@ -70,8 +70,8 @@ def pulisci_db():
 def test_prova_funzione_fixture_aggiungi_prodotto():
     risposta = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})    
     assert risposta.status_code == 200
-    id_nuovo_prodotto = risposta.json()["id"]
-    assert risposta.json()["nome"] == PRODOTTO_VALIDO["nome"]
+    id_nuovo_prodotto = risposta.json()["articolo"]["id"]
+    assert risposta.json()["articolo"]["nome"] == PRODOTTO_VALIDO["nome"]
     richiesta_nuovo = client.get(f"/catalogo/{id_nuovo_prodotto}", headers={"Authorization": "Bearer token_autorizzato"})
     assert richiesta_nuovo.status_code == 200
     assert richiesta_nuovo.json()["id"] == id_nuovo_prodotto
@@ -87,6 +87,41 @@ def test_foreign_key_nuovo_movimento_articolo_inesistente():
         session.add(nuovo_movimento)
         with pytest.raises(IntegrityError):
             session.commit()
+
+def test_delete_nuovo_articolo_senza_movimenti_movimento_nuovo_articolo():
+    nuovo = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
+    assert nuovo.status_code == 200
+    id_nuovo = nuovo.json()["articolo"]["id"]
+    rimozione = client.delete(f"/catalogo/{id_nuovo}", headers={"Authorization": "Bearer token_autorizzato"})
+    assert rimozione.status_code == 200
+    assert rimozione.json()["id"] == id_nuovo
+
+def test_delete_nuovo_articolo_e_movimenti_carico():
+    nuovo = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
+    assert nuovo.status_code == 200
+    id_nuovo = nuovo.json()["articolo"]["id"]
+    aggiunta = client.patch(f"/catalogo/{id_nuovo}/carico", json={"quantita": 1}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert aggiunta.status_code == 200
+    rimozione = client.delete(f"/catalogo/{id_nuovo}", headers={"Authorization": "Bearer token_autorizzato"})
+    assert rimozione.status_code == 409
+    assert rimozione.json()["detail"] == "L'articolo presenta movimenti"
+
+def test_post_articolo_movimento_nuovo_articolo():
+    risposta = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert risposta.json()["movimento"]["tipo"] == "nuovo articolo"
+
+def test_movimenti_per_prodotto():
+    risposta = client.get("/catalogo/1/movimenti", headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert risposta.json() != []
+    for movimento in risposta.json():
+        assert movimento["id_articolo"] == 1
+
+def test_movimenti_articolo_inesistente():
+    risposta = client.get("/catalogo/9999/movimenti", headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 404
+    assert risposta.json()["detail"] == "Articolo non trovato"
         
 def test_ruolo_sbagliato():
     dati = UTENTE_VALIDO.copy()
@@ -112,13 +147,13 @@ def test_rimuovi_utente_senza_autorizzazione():
 def test_registra_e_cancella_utente_e_aggiunta_prodotto_utente_cancellato():
     registrazione = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
     assert registrazione.status_code == 200
-    id_utente = registrazione.json()["ID utente"]
+    id_utente = registrazione.json()["id_utente"]
     login = client.post("/login", json={"username": UTENTE_VALIDO["username"], "password": UTENTE_VALIDO["password"]})
     assert login.status_code == 200
     token = login.json()["token"]
     cancellazione = client.delete(f"/utenti/{id_utente}", headers={"Authorization": "Bearer token_autorizzato"})
     assert cancellazione.status_code == 200
-    assert cancellazione.json()["utente eliminato"]["id"] == id_utente
+    assert cancellazione.json()["utente_eliminato"]["id"] == id_utente
     prova = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": f"Bearer {token}"})
     assert prova.status_code == 401
     assert prova.json()["detail"] == "Token non valido"
@@ -157,7 +192,7 @@ def test_nuovo_utente_password_corta():
 def test_hash_utente():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    id_utente = risposta.json()["ID utente"]
+    id_utente = risposta.json()["id_utente"]
     with Session(engine_test) as session:
         utente = session.get(UtenteORM, id_utente)
     verifica = password_hash.verify(UTENTE_VALIDO["password"], utente.hash_utente)
@@ -166,7 +201,7 @@ def test_hash_utente():
 def test_login_password_sbagliata():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    username = risposta.json()["Username"]
+    username = risposta.json()["username"]
     controllo = client.post("/login", json={"username": username, "password": "123456789"})
     assert controllo.status_code == 401
     assert controllo.json()["detail"] == "Credenziali non valide"
@@ -174,7 +209,7 @@ def test_login_password_sbagliata():
 def test_aggiungi_utente_e_login_corretti():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    username = risposta.json()["Username"]
+    username = risposta.json()["username"]
     password = UTENTE_VALIDO["password"]
     controllo = client.post("/login", json={"username": username, "password": password})
     assert controllo.status_code == 200
@@ -338,6 +373,7 @@ def test_movimenti_completo_filtro_data():
 
 def test_data_inesistente():
     risposta = client.get("/movimenti?data=2030-10-10", headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
     assert risposta.json() == []
     
 
@@ -371,7 +407,7 @@ def test_inserimenti_prodotto_valido():
     dati = PRODOTTO_VALIDO.copy()
     risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    id_nuovo_prodotto = risposta.json()["id"]
+    id_nuovo_prodotto = risposta.json()["articolo"]["id"]
     rilettura = client.get(f"/catalogo/{id_nuovo_prodotto}", headers={"Authorization": "Bearer token_autorizzato"})
     assert rilettura.status_code == 200
     assert rilettura.json()["id"] == id_nuovo_prodotto
@@ -398,7 +434,7 @@ def test_rimuovi_utente_con_movimenti():
 def test_rimuovi_utente_senza_movimenti():
     risposta = client.delete("/utenti/3", headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    assert risposta.json()["utente eliminato"]["id"] == 3
+    assert risposta.json()["utente_eliminato"]["id"] == 3
     controllo = client.get("/utenti/3", headers={"Authorization": "Bearer token_autorizzato"})
     assert controllo.status_code == 404
     assert controllo.json()["detail"] == "Utente non trovato"
