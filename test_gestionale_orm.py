@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
+from pytest import raises
+from sqlalchemy.exc import IntegrityError
 
 client = TestClient(app)
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +81,13 @@ def test_get_prodotto_cancellato_funzione_fixture():
     assert risposta.status_code == 404
     assert risposta.json()["detail"] == "Articolo non trovato"
 
+def test_foreign_key_nuovo_movimento_articolo_inesistente():
+    with Session(engine_test) as session:
+        nuovo_movimento = MovimentoORM(id_utente = 1, id_articolo = 9999, quantita = 10, tipo = "carico", data = data_test, giacenza_dopo_movimento = 15)
+        session.add(nuovo_movimento)
+        with pytest.raises(IntegrityError):
+            session.commit()
+        
 def test_ruolo_sbagliato():
     dati = UTENTE_VALIDO.copy()
     dati["ruolo"] = "magazziniere"
