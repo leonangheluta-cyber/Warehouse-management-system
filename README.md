@@ -16,7 +16,8 @@ what I saw every day in 10 years of warehouse work.
 - **Movement history**: every loading and picking is recorded with *who*, *what*, *how many*, *when*
   and the *stock left after the movement*
 - **Manager view**: a single endpoint that returns the full history with operator and item names
-- **Operator report**: all movements of one operator, filterable by type and day, with the total pieces loaded and picked
+- **Operator report**: all movements of one operator, filterable by type and day
+- **Item history**: all movements of one item, filterable by day
 
 ## Design choices
 
@@ -36,6 +37,12 @@ These are the decisions I'm most interested in, because they come from real ware
   that doesn't exist cannot be used, and a movement can never point to nothing.
 - **History is never deleted.** An item or a user that already has movements cannot be
   deleted: the API answers `409 Conflict` with a clear message.
+  The only exception is an item that was never moved: its only movement is the automatic
+  `nuovo articolo` record, so it can be deleted together with that record (e.g. an item
+  inserted by mistake). The check and the deletions happen in the same transaction: if a
+  real movement is found, the `409` stops the request and nothing is deleted.
+- **The initial stock is part of the history.** Creating an item also records a
+  `nuovo articolo` movement with the starting quantity, in the same commit.
 - **All-or-nothing writes.** Stock update and movement record are committed together,
   once, at the end of the request: if one of the two fails, nothing is saved.
 
@@ -82,15 +89,16 @@ All endpoints except `/login` require the header `Authorization: Bearer <token>`
 | `GET` | `/utenti` | manager | List all users |
 | `GET` | `/utenti/{id_utente}` | manager | Read one user |
 | `DELETE` | `/utenti/{id_utente}` | manager | Delete a user (`409` if they have movements) |
-| `POST` | `/catalogo` | operator, manager | Add a new item |
+| `POST` | `/catalogo` | operator, manager | Add a new item and record its initial stock as a `nuovo articolo` movement |
 | `GET` | `/catalogo` | operator, manager | List items, optional filters `categoria` and `prezzo_inferiore_a` |
 | `GET` | `/catalogo/{id_prodotto}` | operator, manager | Read one item |
 | `PATCH` | `/catalogo/{id_prodotto}` | manager | Update name, price or category |
-| `DELETE` | `/catalogo/{id_prodotto}` | manager | Delete an item (`409` if it has movements) |
+| `DELETE` | `/catalogo/{id_prodotto}` | manager | Delete an item (`409` if it has movements other than `nuovo articolo`) |
 | `PATCH` | `/catalogo/{id_prodotto}/carico` | operator, manager | Load stock (records a movement) |
 | `PATCH` | `/catalogo/{id_prodotto}/prelievo` | operator, manager | Pick stock (records a movement, reports missing pieces) |
 | `GET` | `/movimenti` | manager | Full movement history with operator and item names (through ORM relationships), optional filter `data` (YYYY-MM-DD) |
-| `GET` | `/movimenti/{id_utente}` | manager | Movements of one operator, optional filters `tipo_movimenti` (`carico` / `prelievo`) and `data`, with loaded and picked totals |
+| `GET` | `/movimenti/{id_utente}` | manager | Movements of one operator, optional filters `tipo_movimenti` (`carico` / `prelievo` / `nuovo articolo`) and `data` |
+| `GET` | `/catalogo/{id_prodotto}/movimenti` | manager | Movements of one item, optional filter `data` (`404` if the item doesn't exist) |
 
 ## Database
 
@@ -98,7 +106,7 @@ Four tables in SQLite, defined as SQLAlchemy models and created automatically at
 
 - `articoli`: id, name, price, category, quantity, insertion date, last movement date
 - `utenti`: id, name, username (unique, lowercase), role, password hash
-- `movimenti`: id, operator id, item id, quantity, type (`carico` / `prelievo`), date, stock after movement
+- `movimenti`: id, operator id, item id, quantity, type (`nuovo articolo` / `carico` / `prelievo`), date, stock after movement
 - `sessioni`: token, user id, expiry (deleted together with their user, via cascade)
 
 ## Run it locally
@@ -135,7 +143,9 @@ pytest
 The tests run on a separate database: `app.dependency_overrides` replaces the session
 dependency with one connected to a test database, which a pytest fixture drops, recreates
 and fills with known data before every test, so each test starts from the same state and
-never touches the real one. Foreign keys are enabled on the test database too. They cover the
+never touches the real one. Foreign keys are enabled on the test database too, and a
+dedicated test checks that the database really rejects a movement pointing to a missing
+item (`IntegrityError` on commit). They cover the
 normal cases and the edge ones: missing, invalid and expired tokens, wrong role,
 validation errors, missing resources, deletion of items and users with movements.
 
@@ -151,8 +161,9 @@ validation errors, missing resources, deletion of items and users with movements
 - [x] Database session as a `yield` dependency (one session per request, closed automatically)
 - [x] Migration to SQLAlchemy ORM (endpoints and tests)
 - [ ] `requirements.txt`
-- [ ] Record the initial stock of a new item as a movement
-- [ ] Test that foreign keys are really enforced by the database
+- [x] Record the initial stock of a new item as a movement
+- [x] Movement history of a single item
+- [x] Test that foreign keys are really enforced by the database
 - [ ] PostgreSQL and Docker
 
 ## Tech stack
