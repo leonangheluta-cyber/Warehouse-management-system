@@ -1,20 +1,9 @@
 import os
 from fastapi import HTTPException, Depends
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from datetime import datetime
-from dotenv import load_dotenv
-from pathlib import Path
-from pwdlib import PasswordHash
 from sqlalchemy import select, create_engine, Numeric, ForeignKey, event
 from sqlalchemy.orm import Mapped, mapped_column, Session, DeclarativeBase, relationship
 from decimal import Decimal
 
-schema_bearer = HTTPBearer()
-password_hash = PasswordHash.recommended()
-path_env = Path.home()/"Secret"/".env"
-load_dotenv(dotenv_path=path_env)
-password_gestionale = os.environ.get("PASSWORD_RESPONSABILE")
-hash_password_gestionale = password_hash.hash(password_gestionale)
 
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB_ORM = os.path.join(CARTELLA, "gestionale_orm.db")
@@ -76,13 +65,6 @@ class SessioneORM(Base):
 
 Base.metadata.create_all(engine)
 
-with Session(engine) as session:
-    query_responsabile = select(UtenteORM).where(UtenteORM.username == "leon.l")
-    reaponsabile_trovato = session.scalars(query_responsabile).one_or_none()
-    if reaponsabile_trovato is None:
-        utente_responsabile = UtenteORM(nome = "Leon", hash_utente = hash_password_gestionale, username = "leon.l", ruolo = "responsabile")
-        session.add(utente_responsabile)
-        session.commit()
 
 def apri_db():
     with Session(engine) as session:
@@ -114,37 +96,3 @@ def controlla_utente(id_utente: int, session: Session = Depends(apri_db)):
 def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_movimento, tipo_movimento, data_movimento, giacenza_post):
     nuovo_movimento = MovimentoORM(id_utente = id_utente_movimento, id_articolo = id_articolo_movimento, quantita = quantita_movimento, tipo = tipo_movimento, data = data_movimento, giacenza_dopo_movimento = giacenza_post)
     return nuovo_movimento
-
-def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), session: Session = Depends(apri_db)):
-    token = credenziali.credentials
-    query_sessione = select(SessioneORM).where(SessioneORM.token == token)
-    sessione_trovata = session.scalars(query_sessione).one_or_none()
-    if sessione_trovata is None:
-        raise HTTPException(status_code=401, detail="Token non valido")
-    scadenza = datetime.fromisoformat(sessione_trovata.scadenza)
-    if scadenza > datetime.now().replace(microsecond=0):
-        return sessione_trovata.id_utente
-    else:
-        raise HTTPException(status_code=401, detail="Token scaduto")
-
-def controlla_ruolo_addetto_responsabile(id_utente: int = Depends(controlla_token), session: Session = Depends(apri_db)):
-    query_utente = select(UtenteORM).where(UtenteORM.id == id_utente)
-    utente_trovato = session.scalars(query_utente).one_or_none()
-    if utente_trovato is not None:
-        if utente_trovato.ruolo not in ["addetto", "responsabile"]:
-            raise HTTPException(status_code=403, detail="Azione negata")
-        else:
-            return id_utente
-    else:
-        raise HTTPException(status_code=401, detail="Utente non trovato")
-
-def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token), session: Session = Depends(apri_db)):
-    query_responsabile = select(UtenteORM).where(UtenteORM.id == id_utente)
-    responsabile_trovato = session.scalars(query_responsabile).one_or_none()
-    if responsabile_trovato is not None:
-        if responsabile_trovato.ruolo != "responsabile":
-            raise HTTPException(status_code=403, detail="Azione negata")
-        else:
-            return id_utente
-    else:
-        raise HTTPException(status_code=401, detail="Utente non trovato")
