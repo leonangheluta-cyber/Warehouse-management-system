@@ -69,9 +69,27 @@ These are the decisions I'm most interested in, because they come from real ware
 
 ### Code organization
 
-- `database.py` holds the engine, the ORM models (one class per table, linked with `relationship`),
-  the session dependency, the authentication dependencies and the helper functions
-  (checks, object unpacking, movement creation); `gestionale.py` holds only the endpoints.
+The project is split into modules, one per responsibility:
+
+```
+app/
+├── gestionale.py          # creates the FastAPI app, mounts the routers, login endpoint
+├── database.py            # engine, ORM models (one class per table), session dependency, helpers
+├── schemas.py             # Pydantic models: what the API accepts as input
+├── security.py            # password hashing, token check (401) and role checks (403)
+├── seed.py                # creates the first manager at startup
+├── routers/
+│   ├── catalogo.py        # items, loading, picking, item history
+│   ├── utenti.py          # users
+│   └── movimenti.py       # movement history
+└── test_gestionale_orm.py # tests
+```
+
+- **Each group of endpoints is an `APIRouter`** with its own prefix and tag, mounted in
+  `gestionale.py` with `include_router`.
+- **Dependencies between modules go in one direction only**: `database.py` is the lowest layer
+  and imports nothing from the project; `security.py`, `seed.py` and the routers import from it.
+  This avoids circular imports. Every import uses the `app.` prefix, so each module is loaded once.
 - **One database session per request**, opened by a `yield` dependency and closed automatically
   at the end of the request. FastAPI caches dependencies within a request, so the route and all
   its checks (token, role, item lookup) share the same session and are saved by a single `commit`.
@@ -122,18 +140,20 @@ of the first manager:
 PASSWORD_RESPONSABILE=your_password
 ```
 
-Then start the server:
+Then start the server from the project folder (the one that contains `app/`):
 
 ```bash
-fastapi dev gestionale.py
+uvicorn app.gestionale:app --reload
 ```
 
 Open http://127.0.0.1:8000/docs, call `POST /login` with the first manager's username
-(set in `database.py`) and password, copy the token, click **Authorize** and paste it:
+(set in `app/seed.py`) and password, copy the token, click **Authorize** and paste it:
 from then on every endpoint can be tried from the browser.
 The database file is created automatically on the first run.
 
 ## Tests
+
+From the project folder:
 
 ```bash
 pip install pytest
@@ -164,6 +184,7 @@ validation errors, missing resources, deletion of items and users with movements
 - [x] Record the initial stock of a new item as a movement
 - [x] Movement history of a single item
 - [x] Test that foreign keys are really enforced by the database
+- [x] Refactoring into modules (routers, security, schemas, seed)
 - [ ] PostgreSQL and Docker
 
 ## Tech stack
