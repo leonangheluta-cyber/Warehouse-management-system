@@ -1,17 +1,18 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, event
 import os
-from gestionale import app, apri_db, ArticoloORM, UtenteORM, MovimentoORM, SessioneORM
-from database import password_hash, Base
+from app.database import ArticoloORM, MovimentoORM, UtenteORM, SessioneORM, Base, apri_db
+from app.gestionale import app
+from app.security import password_hash
 import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime
 from dotenv import load_dotenv
 from pathlib import Path
-from pytest import raises
 from sqlalchemy.exc import IntegrityError
 
 client = TestClient(app)
+
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB = os.path.join(CARTELLA, "test_orm.db")
 path_env = Path.home()/ "Secret" / ".env"
@@ -21,7 +22,7 @@ HASH_PASSWORD_RESPONSABILE = password_hash.hash(password_responsabile)
 
 engine_test = create_engine(f"sqlite+pysqlite:///{PERCORSO_DB}")
 data_test = str(datetime.now().replace(microsecond=0))
-password_addetto_1 = password_hash .hash("cane12345")
+password_addetto_1 = password_hash.hash("cane12345")
 password_addetto_2 = password_hash.hash("banana12345")
 
 @event.listens_for(engine_test, "connect")
@@ -140,7 +141,7 @@ def test_username_gia_preso():
 def test_rimuovi_utente_senza_autorizzazione():
     login = client.post("/login", json={"username": "franco.f", "password": "banana12345"})
     token = login.json()["token"]
-    risposta = client.delete("/utenti/2", headers={"Authorization": f"Bearer {token}"})
+    risposta = client.delete("/utenti/3", headers={"Authorization": f"Bearer {token}"})
     assert risposta.status_code == 403
     assert risposta.json()["detail"] == "Azione negata"
 
