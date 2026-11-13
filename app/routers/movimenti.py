@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 from app.security import controlla_ruolo_responsabile
-from app.database import MovimentoORM, UtenteORM, apri_db,spacchetta_movimenti_completo, spacchetta_movimento, controlla_utente
-
+from app.database import MovimentoORM, UtenteORM, spacchetta_movimenti_completo, spacchetta_movimento, SessionDep
+from app.dependencies import controlla_utente
 
 router = APIRouter(prefix="/movimenti", tags=["MOVIMENTI"])
 
 
 @router.get("")
-def movimenti_completo(data : str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), session: Session = Depends(apri_db)):
+def movimenti_completo(session: SessionDep, data : str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     query_movimenti = select(MovimentoORM)
     if data is not None:
         query_movimenti = query_movimenti.where(MovimentoORM.data.startswith(data))
@@ -22,7 +21,7 @@ def movimenti_completo(data : str = None, id_responsabile: int = Depends(control
     return lista_movimenti
 
 @router.get("/{id_utente}")
-def movimenti_utente(tipo_movimenti: str = None, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente), session: Session = Depends(apri_db)):
+def movimenti_utente(session: SessionDep, tipo_movimenti: str = None, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente)):
     query_movimenti = select(MovimentoORM).where(MovimentoORM.id_utente == utente.id)
     if tipo_movimenti is not None:
         if tipo_movimenti not in ["carico", "prelievo", "nuovo articolo"]:

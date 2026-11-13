@@ -4,8 +4,7 @@ from app.security import password_hash
 import os
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from fastapi import Depends
-from app.database import apri_db, UtenteORM, engine
+from app.database import UtenteORM, engine
 
 
 path_env = Path.home()/"Secret"/".env"

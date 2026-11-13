@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends
 from fastapi.exceptions import HTTPException
-from app.database import UtenteORM, apri_db, controlla_utente
+from app.database import UtenteORM, SessionDep
 from app.schemas import Utente
 from app.security import controlla_ruolo_responsabile, password_hash
+from app.dependencies import controlla_utente
 from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 
 router = APIRouter(prefix="/utenti", tags=["UTENTI"])
 
 @router.post("")
-def nuovo_utente(nuovo: Utente, id_responsabile: int = Depends(controlla_ruolo_responsabile), session: Session = Depends(apri_db)):
+def nuovo_utente(session: SessionDep, nuovo: Utente, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     username = nuovo.username.lower()
     query_utente = select(UtenteORM).where(UtenteORM.username == username)
     utente_trovato = session.scalars(query_utente).one_or_none()
@@ -27,7 +26,7 @@ def nuovo_utente(nuovo: Utente, id_responsabile: int = Depends(controlla_ruolo_r
 
 
 @router.get("")
-def mostra_utenti(id_responsabile: int = Depends(controlla_ruolo_responsabile), session: Session = Depends(apri_db)):
+def mostra_utenti(session: SessionDep, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
     query_utenti = select(UtenteORM)
     utenti_trovati = session.scalars(query_utenti).all()
     lista_utenti = []
@@ -38,12 +37,12 @@ def mostra_utenti(id_responsabile: int = Depends(controlla_ruolo_responsabile), 
 
 
 @router.get("/{id_utente}")
-def cerca_utente(id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente), session: Session = Depends(apri_db)):
+def cerca_utente(id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente)):
     return {"nome": utente.nome, "id": utente.id, "ruolo": utente.ruolo, "username": utente.username}
 
 
 @router.delete("/{id_utente}")
-def rimuovi_utente(id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente), session: Session = Depends(apri_db)):
+def rimuovi_utente(session: SessionDep, id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente)):
     if utente.movimenti:
         raise HTTPException(status_code=409, detail="L'utente presenta movimenti")
     session.delete(utente)

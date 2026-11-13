@@ -1,14 +1,20 @@
 import os
-from fastapi import HTTPException, Depends
-from sqlalchemy import select, create_engine, Numeric, ForeignKey, event
+from fastapi import Depends
+from sqlalchemy import create_engine, Numeric, ForeignKey, event
 from sqlalchemy.orm import Mapped, mapped_column, Session, DeclarativeBase, relationship
 from decimal import Decimal
-
+from typing import Annotated
 
 CARTELLA = os.path.dirname(os.path.abspath(__file__))
 PERCORSO_DB_ORM = os.path.join(CARTELLA, "gestionale_orm.db")
 
 engine = create_engine(f"sqlite+pysqlite:///{PERCORSO_DB_ORM}", echo=True)
+
+def apri_db():
+    with Session(engine) as session:
+        yield session
+
+SessionDep = Annotated[Session, Depends(apri_db)]
 
 @event.listens_for(engine, "connect")
 def attiva_foreign_keys(connessione_dbapi, record_connessione):
@@ -66,33 +72,13 @@ class SessioneORM(Base):
 Base.metadata.create_all(engine)
 
 
-def apri_db():
-    with Session(engine) as session:
-        yield session
-
 def spacchetta_articolo(articolo):
     return {"id": articolo.id, "nome": articolo.nome, "prezzo": articolo.prezzo, "categoria": articolo.categoria, "quantita": articolo.quantita, "data_inserimento": articolo.data_inserimento, "data_ultimo_movimento": articolo.data_ultimo_movimento}
+
 
 def spacchetta_movimento(movimento):
     return {"id_movimento": movimento.id, "id_utente": movimento.id_utente, "id_articolo": movimento.id_articolo, "quantita": movimento.quantita, "tipo": movimento.tipo, "data": movimento.data, "giacenza_post_movimento": movimento.giacenza_dopo_movimento}
 
+
 def spacchetta_movimenti_completo(movimento):
     return {"id_movimento": movimento.id, "id_utente": movimento.id_utente, "nome_utente": movimento.utente.nome, "quantita": movimento.quantita, "movimento": movimento.tipo, "articolo": movimento.articolo.nome, "qta_post_movimento": movimento.giacenza_dopo_movimento, "data_movimento": movimento.data}
-
-def controlla_articolo(id_prodotto: int, session: Session = Depends(apri_db)):
-    query_prodotto = select(ArticoloORM).where(ArticoloORM.id == id_prodotto)
-    articolo_trovato = session.scalars(query_prodotto).one_or_none()
-    if articolo_trovato is None:
-        raise HTTPException(status_code=404, detail="Articolo non trovato")
-    return articolo_trovato
-
-def controlla_utente(id_utente: int, session: Session = Depends(apri_db)):
-    query_utente = select(UtenteORM).where(UtenteORM.id == id_utente)
-    utente_trovato = session.scalars(query_utente).one_or_none()
-    if utente_trovato is None:
-        raise HTTPException(status_code=404, detail="Utente non trovato")
-    return utente_trovato
-    
-def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_movimento, tipo_movimento, data_movimento, giacenza_post):
-    nuovo_movimento = MovimentoORM(id_utente = id_utente_movimento, id_articolo = id_articolo_movimento, quantita = quantita_movimento, tipo = tipo_movimento, data = data_movimento, giacenza_dopo_movimento = giacenza_post)
-    return nuovo_movimento

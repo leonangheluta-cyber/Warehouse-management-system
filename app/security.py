@@ -1,8 +1,7 @@
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi import Depends
 from fastapi.exceptions import HTTPException
-from app.database import apri_db, SessioneORM, UtenteORM
-from sqlalchemy.orm import Session
+from app.database import SessioneORM, UtenteORM, SessionDep
 from sqlalchemy import select
 from datetime import datetime
 from pwdlib import PasswordHash
@@ -12,7 +11,7 @@ password_hash = PasswordHash.recommended()
 schema_bearer = HTTPBearer()
 
 
-def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer), session: Session = Depends(apri_db)):
+def controlla_token(session: SessionDep, credenziali: HTTPAuthorizationCredentials = Depends(schema_bearer)):
     token = credenziali.credentials
     query_sessione = select(SessioneORM).where(SessioneORM.token == token)
     sessione_trovata = session.scalars(query_sessione).one_or_none()
@@ -25,7 +24,7 @@ def controlla_token(credenziali: HTTPAuthorizationCredentials = Depends(schema_b
         raise HTTPException(status_code=401, detail="Token scaduto")
 
 
-def controlla_ruolo_addetto_responsabile(id_utente: int = Depends(controlla_token), session: Session = Depends(apri_db)):
+def controlla_ruolo_addetto_responsabile(session: SessionDep, id_utente: int = Depends(controlla_token)):
     query_utente = select(UtenteORM).where(UtenteORM.id == id_utente)
     utente_trovato = session.scalars(query_utente).one_or_none()
     if utente_trovato is not None:
@@ -37,7 +36,7 @@ def controlla_ruolo_addetto_responsabile(id_utente: int = Depends(controlla_toke
         raise HTTPException(status_code=401, detail="Utente non trovato")
 
 
-def controlla_ruolo_responsabile(id_utente: int = Depends(controlla_token), session: Session = Depends(apri_db)):
+def controlla_ruolo_responsabile(session: SessionDep, id_utente: int = Depends(controlla_token)):
     query_responsabile = select(UtenteORM).where(UtenteORM.id == id_utente)
     responsabile_trovato = session.scalars(query_responsabile).one_or_none()
     if responsabile_trovato is not None:

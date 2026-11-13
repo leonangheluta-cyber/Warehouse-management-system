@@ -455,3 +455,27 @@ def test_rimuovi_articolo_senza_movimenti():
     controllo = client.get("/catalogo/3", headers={"Authorization": "Bearer token_autorizzato"})
     assert controllo.status_code == 404
     assert controllo.json()["detail"] == "Articolo non trovato"
+
+def test_filtro_nome_get_catalogo():
+    risposta = client.get("/catalogo", params={"nome": "mouse"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    body = risposta.json()
+    assert len(body) == 1
+    assert body[0]["nome"] == "Mouse da gaming"
+
+def test_filtro_nome_inesistente_get_catalogo():
+    risposta = client.get("/catalogo", params={"nome": "scheda video"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert risposta.json() == []
+
+def test_filtro_data_get_catalogo():
+    with Session(engine_test) as session:
+        nuovo_articolo = ArticoloORM(nome = "Scheda video", prezzo = 500, categoria = "scheda video", quantita = 15, data_inserimento = "2020-10-10", data_ultimo_movimento = "2020-10-10")
+        session.add(nuovo_articolo)
+        session.commit()
+    risposta = client.get("/catalogo", params={"data_inserimento": data_test}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    dati = risposta.json()
+    assert len(dati) == 3
+    for articolo in dati:
+        assert articolo["data_inserimento"] == data_test
