@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from app.routers import catalogo, utenti, movimenti, login
-from app.security import password_hash
 from app.seed import inserisci_seed
 
 app = FastAPI()

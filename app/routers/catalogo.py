@@ -3,12 +3,17 @@ from fastapi.exceptions import HTTPException
 from app.schemas import Articolo, ModificaArticolo, CaricoPrelievo
 from app.database import ArticoloORM, MovimentoORM, spacchetta_articolo, spacchetta_movimento, SessionDep
 from app.security import controlla_ruolo_responsabile, controlla_ruolo_addetto_responsabile
-from app.dependencies import controlla_articolo, crea_movimento
+from app.dependencies import controlla_articolo
 from sqlalchemy import select
 from datetime import datetime
 
 
 router = APIRouter(prefix="/catalogo", tags=["CATALOGO"])
+
+
+def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_movimento, tipo_movimento, data_movimento, giacenza_post):
+    nuovo_movimento = MovimentoORM(id_utente = id_utente_movimento, id_articolo = id_articolo_movimento, quantita = quantita_movimento, tipo = tipo_movimento, data = data_movimento, giacenza_dopo_movimento = giacenza_post)
+    return nuovo_movimento
 
 
 @router.post("")
