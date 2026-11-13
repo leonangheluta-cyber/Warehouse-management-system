@@ -73,12 +73,14 @@ The project is split into modules, one per responsibility:
 
 ```
 app/
-├── gestionale.py          # creates the FastAPI app, mounts the routers, login endpoint
-├── database.py            # engine, ORM models (one class per table), session dependency, helpers
+├── gestionale.py          # creates the FastAPI app and mounts the routers
+├── database.py            # engine, ORM models (one class per table), SessionDep, response helpers
+├── dependencies.py        # "find or 404" dependencies for items and users
 ├── schemas.py             # Pydantic models: what the API accepts as input
 ├── security.py            # password hashing, token check (401) and role checks (403)
 ├── seed.py                # creates the first manager at startup
 ├── routers/
+│   ├── login.py           # login, returns a session token
 │   ├── catalogo.py        # items, loading, picking, item history
 │   ├── utenti.py          # users
 │   └── movimenti.py       # movement history
@@ -91,7 +93,9 @@ app/
   and imports nothing from the project; `security.py`, `seed.py` and the routers import from it.
   This avoids circular imports. Every import uses the `app.` prefix, so each module is loaded once.
 - **One database session per request**, opened by a `yield` dependency and closed automatically
-  at the end of the request. FastAPI caches dependencies within a request, so the route and all
+  at the end of the request. The dependency is declared once in `database.py` as
+  `SessionDep = Annotated[Session, Depends(apri_db)]`, so every route and check just asks for
+  `session: SessionDep`. FastAPI caches dependencies within a request, so the route and all
   its checks (token, role, item lookup) share the same session and are saved by a single `commit`.
 - **Endpoints never return ORM objects directly**: they are unpacked into plain dictionaries,
   so internal fields like the password hash can never end up in a response.
@@ -108,7 +112,7 @@ All endpoints except `/login` require the header `Authorization: Bearer <token>`
 | `GET` | `/utenti/{id_utente}` | manager | Read one user |
 | `DELETE` | `/utenti/{id_utente}` | manager | Delete a user (`409` if they have movements) |
 | `POST` | `/catalogo` | operator, manager | Add a new item and record its initial stock as a `nuovo articolo` movement |
-| `GET` | `/catalogo` | operator, manager | List items, optional filters `categoria` and `prezzo_inferiore_a` |
+| `GET` | `/catalogo` | operator, manager | List items, optional filters `nome` (partial, case-insensitive), `categoria`, `prezzo_inferiore_a` and `data_inserimento` (YYYY-MM-DD or a prefix like YYYY-MM) |
 | `GET` | `/catalogo/{id_prodotto}` | operator, manager | Read one item |
 | `PATCH` | `/catalogo/{id_prodotto}` | manager | Update name, price or category |
 | `DELETE` | `/catalogo/{id_prodotto}` | manager | Delete an item (`409` if it has movements other than `nuovo articolo`) |
@@ -167,7 +171,8 @@ never touches the real one. Foreign keys are enabled on the test database too, a
 dedicated test checks that the database really rejects a movement pointing to a missing
 item (`IntegrityError` on commit). They cover the
 normal cases and the edge ones: missing, invalid and expired tokens, wrong role,
-validation errors, missing resources, deletion of items and users with movements.
+validation errors, missing resources, deletion of items and users with movements, and the
+list filters (each filter test is checked to fail when the filter is removed).
 
 ## Roadmap
 
@@ -184,7 +189,8 @@ validation errors, missing resources, deletion of items and users with movements
 - [x] Record the initial stock of a new item as a movement
 - [x] Movement history of a single item
 - [x] Test that foreign keys are really enforced by the database
-- [x] Refactoring into modules (routers, security, schemas, seed)
+- [x] Refactoring into modules (routers, security, schemas, seed, dependencies) with a shared `SessionDep`
+- [x] Name and insertion-date filters on the item list
 - [ ] PostgreSQL and Docker
 
 ## Tech stack
