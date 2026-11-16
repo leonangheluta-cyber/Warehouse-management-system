@@ -22,6 +22,8 @@ def attiva_foreign_keys(connessione_dbapi, record_connessione):
     cursore.execute("PRAGMA foreign_keys = ON")
     cursore.close()
 
+#------ ORM classes ------
+
 class Base(DeclarativeBase):
     pass
 
@@ -70,15 +72,3 @@ class SessioneORM(Base):
     utente: Mapped["UtenteORM"] = relationship(back_populates="sessioni")
 
 Base.metadata.create_all(engine)
-
-
-def spacchetta_articolo(articolo):
-    return {"id": articolo.id, "nome": articolo.nome, "prezzo": articolo.prezzo, "categoria": articolo.categoria, "quantita": articolo.quantita, "data_inserimento": articolo.data_inserimento, "data_ultimo_movimento": articolo.data_ultimo_movimento}
-
-
-def spacchetta_movimento(movimento):
-    return {"id_movimento": movimento.id, "id_utente": movimento.id_utente, "id_articolo": movimento.id_articolo, "quantita": movimento.quantita, "tipo": movimento.tipo, "data": movimento.data, "giacenza_post_movimento": movimento.giacenza_dopo_movimento}
-
-
-def spacchetta_movimenti_completo(movimento):
-    return {"id_movimento": movimento.id, "id_utente": movimento.id_utente, "nome_utente": movimento.utente.nome, "quantita": movimento.quantita, "movimento": movimento.tipo, "articolo": movimento.articolo.nome, "qta_post_movimento": movimento.giacenza_dopo_movimento, "data_movimento": movimento.data}

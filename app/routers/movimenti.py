@@ -1,27 +1,24 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.exceptions import HTTPException
 from sqlalchemy import select
-from app.security import controlla_ruolo_responsabile
-from app.database import MovimentoORM, UtenteORM, spacchetta_movimenti_completo, spacchetta_movimento, SessionDep
-from app.dependencies import controlla_utente
+from app.security import ResponsabileDep
+from app.database import MovimentoORM, SessionDep
+from app.dependencies import  UtenteDep
+from app.schemas import MovimentoOut, MovimentoCompletoOut
 
 router = APIRouter(prefix="/movimenti", tags=["MOVIMENTI"])
 
 
-@router.get("")
-def movimenti_completo(session: SessionDep, data : str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile)):
+@router.get("", response_model=list[MovimentoCompletoOut])
+def movimenti_completo(id_responsabile: ResponsabileDep, session: SessionDep, data : str = None):
     query_movimenti = select(MovimentoORM)
     if data is not None:
         query_movimenti = query_movimenti.where(MovimentoORM.data.startswith(data))
     movimenti = session.scalars(query_movimenti).all()
-    lista_movimenti = []
-    for movimento in movimenti:
-        movimento_trovato = spacchetta_movimenti_completo(movimento)
-        lista_movimenti.append(movimento_trovato)
-    return lista_movimenti
+    return movimenti
 
-@router.get("/{id_utente}")
-def movimenti_utente(session: SessionDep, tipo_movimenti: str = None, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), utente: UtenteORM = Depends(controlla_utente)):
+@router.get("/{id_utente}", response_model=list[MovimentoOut])
+def movimenti_utente(id_responsabile: ResponsabileDep, utente: UtenteDep, session: SessionDep, tipo_movimenti: str = None, data: str = None):
     query_movimenti = select(MovimentoORM).where(MovimentoORM.id_utente == utente.id)
     if tipo_movimenti is not None:
         if tipo_movimenti not in ["carico", "prelievo", "nuovo articolo"]:
@@ -30,8 +27,4 @@ def movimenti_utente(session: SessionDep, tipo_movimenti: str = None, data: str 
     if data is not None:
         query_movimenti = query_movimenti.where(MovimentoORM.data.startswith(data))
     movimenti = session.scalars(query_movimenti).all()
-    lista_movimenti = []
-    for movimento in movimenti:
-        movimento_trovato = spacchetta_movimento(movimento)
-        lista_movimenti.append(movimento_trovato)
-    return lista_movimenti
+    return movimenti

@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+#------- Pydantic class -------
 
 class Articolo(BaseModel):
     nome: str = Field(min_length = 2)
@@ -24,3 +25,54 @@ class Utente(BaseModel):
 class LoginUtente(BaseModel):
     username: str 
     password: str 
+
+#------- response_model ----------
+
+class UtenteOut(BaseModel):
+    id: int
+    nome: str
+    username: str
+    ruolo: str
+
+class MovimentoOut(BaseModel):
+    id: int
+    id_utente: int
+    id_articolo: int
+    quantita: int
+    tipo: str
+    data: str
+    giacenza_dopo_movimento: int
+
+class ArticoloOut(BaseModel):
+    id: int
+    nome: str
+    categoria: str
+    prezzo: float
+    quantita: int
+    data_inserimento: str
+    data_ultimo_movimento: str
+
+class ArticoloConMovimento(BaseModel):
+    articolo: ArticoloOut
+    movimento: MovimentoOut
+
+class ArticoloPrelevatoOut(BaseModel):
+    articolo: ArticoloOut
+    movimento: MovimentoOut
+    da_prelevare: int
+
+class UtenteMovimento(BaseModel):
+    id: int
+    nome: str
+
+class ArticoloMovimento(BaseModel):
+    nome: str
+
+class MovimentoCompletoOut(BaseModel):
+    id: int
+    quantita: int
+    tipo: str
+    giacenza_dopo_movimento: int
+    data: str
+    utente: UtenteMovimento
+    articolo: ArticoloMovimento

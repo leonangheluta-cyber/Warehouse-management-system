@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.exceptions import HTTPException
-from app.schemas import Articolo, ModificaArticolo, CaricoPrelievo
-from app.database import ArticoloORM, MovimentoORM, spacchetta_articolo, spacchetta_movimento, SessionDep
-from app.security import controlla_ruolo_responsabile, controlla_ruolo_addetto_responsabile
-from app.dependencies import controlla_articolo
+from app.schemas import Articolo, ModificaArticolo, CaricoPrelievo, MovimentoOut, ArticoloConMovimento, ArticoloOut, ArticoloPrelevatoOut
+from app.database import ArticoloORM, MovimentoORM, SessionDep
+from app.security import ResponsabileDep, AddettoDep
+from app.dependencies import ArticoloDep
 from sqlalchemy import select
 from datetime import datetime
 
@@ -16,18 +16,18 @@ def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_moviment
     return nuovo_movimento
 
 
-@router.post("")
-def aggiungi_articolo(session: SessionDep, articolo: Articolo, id_utente_movimento: int = Depends(controlla_ruolo_addetto_responsabile)):
+@router.post("", response_model=ArticoloConMovimento)
+def aggiungi_articolo(id_utente_movimento: AddettoDep, session: SessionDep, articolo: Articolo):
     data_movimento = str(datetime.now().replace(microsecond=0))
     nuovo_articolo = ArticoloORM(nome = articolo.nome, prezzo = articolo.prezzo, categoria = articolo.categoria.lower(), quantita = articolo.quantita, data_inserimento = data_movimento, data_ultimo_movimento = data_movimento)
     nuovo_movimento = MovimentoORM(id_utente = id_utente_movimento, articolo = nuovo_articolo, quantita = nuovo_articolo.quantita, tipo = "nuovo articolo", data = data_movimento, giacenza_dopo_movimento = nuovo_articolo.quantita)
     session.add_all([nuovo_articolo, nuovo_movimento])
     session.commit()
-    return {"articolo": spacchetta_articolo(nuovo_articolo), "movimento": spacchetta_movimento(nuovo_movimento)}
+    return {"articolo": nuovo_articolo, "movimento": nuovo_movimento}
 
 
-@router.get("")
-def trova_prodotti(session: SessionDep, nome: str = None, prezzo_inferiore_a: float = None, categoria: str = None, data_inserimento: str = None, id_utente: int = Depends(controlla_ruolo_addetto_responsabile)):
+@router.get("", response_model=list[ArticoloOut])
+def trova_prodotti(id_utente: AddettoDep, session: SessionDep, nome: str = None, prezzo_inferiore_a: float = None, categoria: str = None, data_inserimento: str = None):
     query_catalogo = select(ArticoloORM)
     if categoria is not None:
         query_catalogo = query_catalogo.where(ArticoloORM.categoria == categoria.lower())
@@ -38,20 +38,16 @@ def trova_prodotti(session: SessionDep, nome: str = None, prezzo_inferiore_a: fl
     if nome is not None:
         query_catalogo = query_catalogo.where(ArticoloORM.nome.ilike(f"%{nome}%"))
     catalogo_trovato = session.scalars(query_catalogo).all()
-    lista_articoli = []
-    for articolo in catalogo_trovato:
-        articolo_spacchettato = spacchetta_articolo(articolo)
-        lista_articoli.append(articolo_spacchettato)
-    return lista_articoli
+    return catalogo_trovato
 
 
-@router.get("/{id_prodotto}")
-def cerca_id(id_utente: int = Depends(controlla_ruolo_addetto_responsabile), prodotto: ArticoloORM = Depends(controlla_articolo)):
-    return spacchetta_articolo(prodotto)
+@router.get("/{id_prodotto}", response_model=ArticoloOut)
+def cerca_id(prodotto: ArticoloDep, id_utente: AddettoDep):
+    return prodotto
 
 
-@router.delete("/{id_prodotto}")
-def rimuovi_prodotto(session: SessionDep, id_responsabile: int = Depends(controlla_ruolo_responsabile), prodotto: ArticoloORM = Depends(controlla_articolo)):
+@router.delete("/{id_prodotto}", response_model=ArticoloOut)
+def rimuovi_prodotto(id_responsabile: ResponsabileDep, prodotto: ArticoloDep, session: SessionDep):
     for movimento in prodotto.movimenti:
         if movimento.tipo != "nuovo articolo":
             raise HTTPException(status_code=409, detail="L'articolo presenta movimenti")
@@ -59,11 +55,11 @@ def rimuovi_prodotto(session: SessionDep, id_responsabile: int = Depends(control
             session.delete(movimento)
     session.delete(prodotto)
     session.commit()
-    return spacchetta_articolo(prodotto)
+    return prodotto
 
 
-@router.patch("/{id_prodotto}")
-def modifica_articolo(session: SessionDep, nuovo: ModificaArticolo, id_responsabile: int = Depends(controlla_ruolo_responsabile), articolo: ArticoloORM = Depends(controlla_articolo)):
+@router.patch("/{id_prodotto}", response_model=ArticoloOut)
+def modifica_articolo(id_responsabile: ResponsabileDep, articolo: ArticoloDep, session: SessionDep, nuovo: ModificaArticolo):
     if nuovo.nome is not None:
         articolo.nome= nuovo.nome
     if nuovo.prezzo is not None:
@@ -71,21 +67,21 @@ def modifica_articolo(session: SessionDep, nuovo: ModificaArticolo, id_responsab
     if nuovo.categoria is not None:
         articolo.categoria = nuovo.categoria.lower()
     session.commit()
-    return spacchetta_articolo(articolo)
+    return articolo
 
 
-@router.patch("/{id_prodotto}/carico")
-def carica_quantita_articolo(session: SessionDep, richiesta: CaricoPrelievo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), articolo: ArticoloORM = Depends(controlla_articolo)):
+@router.patch("/{id_prodotto}/carico", response_model=ArticoloConMovimento)
+def carica_quantita_articolo(id_utente: AddettoDep,articolo: ArticoloDep, session: SessionDep, richiesta: CaricoPrelievo):
     data_movimento = str(datetime.now().replace(microsecond=0))
     articolo.quantita += richiesta.quantita
     articolo.data_ultimo_movimento = data_movimento
     nuovo_movimento = crea_movimento(id_utente, articolo.id, richiesta.quantita, "carico", data_movimento, articolo.quantita)
     session.add(nuovo_movimento)
     session.commit()
-    return {"articolo": spacchetta_articolo(articolo), "movimento" : spacchetta_movimento(nuovo_movimento)}
+    return {"articolo": articolo, "movimento" : nuovo_movimento}
 
-@router.patch("/{id_prodotto}/prelievo")
-def preleva_merce(session: SessionDep, richiesta: CaricoPrelievo, id_utente: int = Depends(controlla_ruolo_addetto_responsabile), articolo: ArticoloORM = Depends(controlla_articolo)):
+@router.patch("/{id_prodotto}/prelievo", response_model=ArticoloPrelevatoOut)
+def preleva_merce(id_utente: AddettoDep,session: SessionDep, richiesta: CaricoPrelievo, articolo: ArticoloDep):
     data_movimento = str(datetime.now().replace(microsecond=0))
     if richiesta.quantita >= articolo.quantita:
         rimanenza = richiesta.quantita - articolo.quantita
@@ -99,16 +95,13 @@ def preleva_merce(session: SessionDep, richiesta: CaricoPrelievo, id_utente: int
     nuovo_movimento = crea_movimento(id_utente, articolo.id, quantita_movimento, "prelievo", data_movimento, articolo.quantita)
     session.add(nuovo_movimento)
     session.commit()
-    return {"articolo": spacchetta_articolo(articolo), "movimento": spacchetta_movimento(nuovo_movimento), "da_prelevare": rimanenza}
+    return {"articolo": articolo, "movimento": nuovo_movimento, "da_prelevare": rimanenza}
 
 
-@router.get("/{id_prodotto}/movimenti")
-def movimenti_articolo(session: SessionDep, data: str = None, id_responsabile: int = Depends(controlla_ruolo_responsabile), articolo: ArticoloORM = Depends(controlla_articolo)):
+@router.get("/{id_prodotto}/movimenti", response_model=list[MovimentoOut])
+def movimenti_articolo(id_responsabile: ResponsabileDep, articolo: ArticoloDep, session: SessionDep, data: str = None):
     query_articolo = select(MovimentoORM).where(MovimentoORM.id_articolo == articolo.id)
     if data is not None:
         query_articolo = query_articolo.where(MovimentoORM.data.startswith(data))
     articolo_movimenti = session.scalars(query_articolo).all()
-    lista_movimenti = []
-    for movimento in articolo_movimenti:
-        lista_movimenti.append(spacchetta_movimento(movimento))
-    return lista_movimenti
+    return articolo_movimenti
