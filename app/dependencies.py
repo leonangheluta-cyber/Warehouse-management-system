@@ -1,6 +1,8 @@
 from app.database import SessionDep, ArticoloORM, UtenteORM
+from fastapi import Depends
 from fastapi.exceptions import HTTPException
 from sqlalchemy import select
+from typing import Annotated
 
 
 def controlla_articolo(session: SessionDep, id_prodotto: int):
@@ -17,3 +19,7 @@ def controlla_utente(session: SessionDep, id_utente: int):
     if utente_trovato is None:
         raise HTTPException(status_code=404, detail="Utente non trovato")
     return utente_trovato
+    
+
+UtenteDep = Annotated[UtenteORM, Depends(controlla_utente)]
+ArticoloDep = Annotated[ArticoloORM, Depends(controlla_articolo)]

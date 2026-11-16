@@ -148,13 +148,13 @@ def test_rimuovi_utente_senza_autorizzazione():
 def test_registra_e_cancella_utente_e_aggiunta_prodotto_utente_cancellato():
     registrazione = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
     assert registrazione.status_code == 200
-    id_utente = registrazione.json()["id_utente"]
+    id_utente = registrazione.json()["id"]
     login = client.post("/login", json={"username": UTENTE_VALIDO["username"], "password": UTENTE_VALIDO["password"]})
     assert login.status_code == 200
     token = login.json()["token"]
     cancellazione = client.delete(f"/utenti/{id_utente}", headers={"Authorization": "Bearer token_autorizzato"})
     assert cancellazione.status_code == 200
-    assert cancellazione.json()["utente_eliminato"]["id"] == id_utente
+    assert cancellazione.json()["id"] == id_utente
     prova = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": f"Bearer {token}"})
     assert prova.status_code == 401
     assert prova.json()["detail"] == "Token non valido"
@@ -193,7 +193,7 @@ def test_nuovo_utente_password_corta():
 def test_hash_utente():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    id_utente = risposta.json()["id_utente"]
+    id_utente = risposta.json()["id"]
     with Session(engine_test) as session:
         utente = session.get(UtenteORM, id_utente)
     verifica = password_hash.verify(UTENTE_VALIDO["password"], utente.hash_utente)
@@ -359,9 +359,11 @@ def test_preleva_quantita_maggiore_di_stock():
     giacenza = richiesta_giacenza.json()["quantita"]
     risposta = client.patch("/catalogo/2/prelievo" , json={"quantita": 9999}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    assert risposta.json()["articolo"]["quantita"] == 0
-    assert risposta.json()["da_prelevare"] == 9999 - giacenza
-    assert risposta.json()["movimento"]["quantita"] == giacenza
+    body = risposta.json()
+    rimanenza = 9999 - giacenza
+    assert body["articolo"]["quantita"] == 0
+    assert body["da_prelevare"] == rimanenza
+    assert body["movimento"]["quantita"] == giacenza
 
 def test_movimenti_completo_filtro_data():
     solo_data = data_test.split()[0]
@@ -370,7 +372,7 @@ def test_movimenti_completo_filtro_data():
     assert risposta.status_code == 200
     assert dati != []
     for riga in dati:
-        assert riga["data_movimento"].split()[0] == solo_data
+        assert riga["data"].split()[0] == solo_data
 
 def test_data_inesistente():
     risposta = client.get("/movimenti?data=2030-10-10", headers={"Authorization": "Bearer token_autorizzato"})
@@ -435,7 +437,7 @@ def test_rimuovi_utente_con_movimenti():
 def test_rimuovi_utente_senza_movimenti():
     risposta = client.delete("/utenti/3", headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    assert risposta.json()["utente_eliminato"]["id"] == 3
+    assert risposta.json()["id"] == 3
     controllo = client.get("/utenti/3", headers={"Authorization": "Bearer token_autorizzato"})
     assert controllo.status_code == 404
     assert controllo.json()["detail"] == "Utente non trovato"

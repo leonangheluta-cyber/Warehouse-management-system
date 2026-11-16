@@ -5,6 +5,7 @@ from app.database import SessioneORM, UtenteORM, SessionDep
 from sqlalchemy import select
 from datetime import datetime
 from pwdlib import PasswordHash
+from typing import Annotated
 
 password_hash = PasswordHash.recommended()
 
@@ -46,3 +47,7 @@ def controlla_ruolo_responsabile(session: SessionDep, id_utente: int = Depends(c
             return id_utente
     else:
         raise HTTPException(status_code=401, detail="Utente non trovato")
+
+
+ResponsabileDep = Annotated[int, Depends(controlla_ruolo_responsabile)]
+AddettoDep = Annotated[int, Depends(controlla_ruolo_addetto_responsabile)]
