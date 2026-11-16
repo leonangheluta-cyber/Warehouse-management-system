@@ -56,6 +56,8 @@ These are the decisions I'm most interested in, because they come from real ware
   in its signature who can call it, through a chain of dependencies:
   `HTTPBearer` (reads the `Authorization: Bearer` header) → token check (`401`) → role check (`403`).
   A check cannot be forgotten inside the function body, and `/docs` shows the **Authorize** button.
+  The role checks are declared once as `Annotated` aliases (`AddettoDep`, `ResponsabileDep`),
+  so a route just asks for `id_utente: AddettoDep`.
 - **Checks always run in the same order**: who you are (`401`) → what you can do (`403`) →
   the data (`404` / `400` / `409`). An operator can't use a `404` vs `403` difference
   to find out which users exist.
@@ -74,10 +76,10 @@ The project is split into modules, one per responsibility:
 ```
 app/
 ├── gestionale.py          # creates the FastAPI app and mounts the routers
-├── database.py            # engine, ORM models (one class per table), SessionDep, response helpers
-├── dependencies.py        # "find or 404" dependencies for items and users
-├── schemas.py             # Pydantic models: what the API accepts as input
-├── security.py            # password hashing, token check (401) and role checks (403)
+├── database.py            # engine, ORM models (one class per table), SessionDep
+├── dependencies.py        # "find or 404" dependencies for items and users (ArticoloDep, UtenteDep)
+├── schemas.py             # Pydantic models: what the API accepts (input) and returns (response_model)
+├── security.py            # password hashing, token check (401) and role checks (403: AddettoDep, ResponsabileDep)
 ├── seed.py                # creates the first manager at startup
 ├── routers/
 │   ├── login.py           # login, returns a session token
@@ -97,8 +99,15 @@ app/
   `SessionDep = Annotated[Session, Depends(apri_db)]`, so every route and check just asks for
   `session: SessionDep`. FastAPI caches dependencies within a request, so the route and all
   its checks (token, role, item lookup) share the same session and are saved by a single `commit`.
-- **Endpoints never return ORM objects directly**: they are unpacked into plain dictionaries,
-  so internal fields like the password hash can never end up in a response.
+- **"Find or 404" lookups are reusable dependencies.** `ArticoloDep` and `UtenteDep`
+  (`Annotated[..., Depends(...)]`) read the id from the path, load the row and answer `404`
+  if it doesn't exist, before the route body runs. Routes just ask for `articolo: ArticoloDep`.
+- **Every endpoint declares its response shape with `response_model`.** Routes return the ORM
+  objects and FastAPI filters them through Pydantic `...Out` models (`schemas.py`), keeping
+  only the declared fields: internal fields like the password hash can never end up in a
+  response, and every response shape is documented in `/docs`. Responses with more than one
+  part use nested models (e.g. item + movement), and the full movement history follows the
+  ORM relationships to include the operator and the item.
 
 ## Endpoints
 
@@ -121,6 +130,18 @@ All endpoints except `/login` require the header `Authorization: Bearer <token>`
 | `GET` | `/movimenti` | manager | Full movement history with operator and item names (through ORM relationships), optional filter `data` (YYYY-MM-DD) |
 | `GET` | `/movimenti/{id_utente}` | manager | Movements of one operator, optional filters `tipo_movimenti` (`carico` / `prelievo` / `nuovo articolo`) and `data` |
 | `GET` | `/catalogo/{id_prodotto}/movimenti` | manager | Movements of one item, optional filter `data` (`404` if the item doesn't exist) |
+
+## Response shapes
+
+All ids are returned as `id`. The main shapes:
+
+- **User** (`UtenteOut`): `id`, `nome`, `username`, `ruolo` (never the password hash)
+- **Item** (`ArticoloOut`): `id`, `nome`, `categoria`, `prezzo`, `quantita`, `data_inserimento`, `data_ultimo_movimento`
+- **Movement** (`MovimentoOut`): `id`, `id_utente`, `id_articolo`, `quantita`, `tipo`, `data`, `giacenza_dopo_movimento`
+- **New item / loading** (`ArticoloConMovimento`): `{"articolo": {...}, "movimento": {...}}`
+- **Picking** (`ArticoloPrelevatoOut`): same as above plus `da_prelevare`, the pieces that were requested but missing
+- **Full history** (`GET /movimenti`, `MovimentoCompletoOut`): each movement with
+  `"utente": {"id", "nome"}` and `"articolo": {"nome"}` nested inside
 
 ## Database
 
@@ -191,6 +212,9 @@ list filters (each filter test is checked to fail when the filter is removed).
 - [x] Test that foreign keys are really enforced by the database
 - [x] Refactoring into modules (routers, security, schemas, seed, dependencies) with a shared `SessionDep`
 - [x] Name and insertion-date filters on the item list
+- [x] `response_model` on every endpoint (Pydantic output models instead of hand-built dictionaries)
+- [x] `Annotated` dependency aliases for item/user lookups and role checks
+- [ ] Startup code with `lifespan` (seed of the first manager)
 - [ ] PostgreSQL and Docker
 
 ## Tech stack
