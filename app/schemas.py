@@ -33,6 +33,7 @@ class UtenteOut(BaseModel):
     nome: str
     username: str
     ruolo: str
+    
 
 class MovimentoOut(BaseModel):
     id: int
