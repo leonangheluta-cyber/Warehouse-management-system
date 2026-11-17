@@ -75,12 +75,12 @@ The project is split into modules, one per responsibility:
 
 ```
 app/
-├── gestionale.py          # creates the FastAPI app and mounts the routers
+├── gestionale.py          # creates the FastAPI app, its lifespan (startup code) and mounts the routers
 ├── database.py            # engine, ORM models (one class per table), SessionDep
 ├── dependencies.py        # "find or 404" dependencies for items and users (ArticoloDep, UtenteDep)
 ├── schemas.py             # Pydantic models: what the API accepts (input) and returns (response_model)
 ├── security.py            # password hashing, token check (401) and role checks (403: AddettoDep, ResponsabileDep)
-├── seed.py                # creates the first manager at startup
+├── seed.py                # creates the first manager (called once at startup)
 ├── routers/
 │   ├── login.py           # login, returns a session token
 │   ├── catalogo.py        # items, loading, picking, item history
@@ -94,6 +94,11 @@ app/
 - **Dependencies between modules go in one direction only**: `database.py` is the lowest layer
   and imports nothing from the project; `security.py`, `seed.py` and the routers import from it.
   This avoids circular imports. Every import uses the `app.` prefix, so each module is loaded once.
+- **Startup code runs at startup, not at import.** Table creation and the seed of the first manager
+  run in the app's `lifespan` (before its `yield`), once, when the server starts. Importing a module
+  (as the tests do) no longer touches the database: the test `TestClient` doesn't run the lifespan, so
+  the tests never write to the real database. The seed is idempotent: it creates the manager only if
+  it doesn't exist yet, and hashes the password only in that case.
 - **One database session per request**, opened by a `yield` dependency and closed automatically
   at the end of the request. The dependency is declared once in `database.py` as
   `SessionDep = Annotated[Session, Depends(apri_db)]`, so every route and check just asks for
@@ -214,7 +219,7 @@ list filters (each filter test is checked to fail when the filter is removed).
 - [x] Name and insertion-date filters on the item list
 - [x] `response_model` on every endpoint (Pydantic output models instead of hand-built dictionaries)
 - [x] `Annotated` dependency aliases for item/user lookups and role checks
-- [ ] Startup code with `lifespan` (seed of the first manager)
+- [x] Startup code with `lifespan` (table creation and seed of the first manager)
 - [ ] PostgreSQL and Docker
 
 ## Tech stack

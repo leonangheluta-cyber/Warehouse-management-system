@@ -481,3 +481,14 @@ def test_filtro_data_get_catalogo():
     assert len(dati) == 3
     for articolo in dati:
         assert articolo["data_inserimento"] == data_test
+
+def test_movimenti_completo_annidati():
+    risposta = client.get("/movimenti", headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    body = risposta.json()
+    assert len(body) == 3
+    assert body[-1]["id"] == len(body)
+    assert body[-1]["utente"]["nome"] == "Mario"
+    assert body[-1]["articolo"]["nome"] == "Mouse da gaming"
+    for dati in body:
+        assert "hash_utente" not in dati["utente"]
