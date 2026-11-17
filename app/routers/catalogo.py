@@ -19,7 +19,9 @@ def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_moviment
 @router.post("", response_model=ArticoloConMovimento)
 def aggiungi_articolo(id_utente_movimento: AddettoDep, session: SessionDep, articolo: Articolo):
     data_movimento = str(datetime.now().replace(microsecond=0))
-    nuovo_articolo = ArticoloORM(nome = articolo.nome, prezzo = articolo.prezzo, categoria = articolo.categoria.lower(), quantita = articolo.quantita, data_inserimento = data_movimento, data_ultimo_movimento = data_movimento)
+    dati_articolo = articolo.model_dump()
+    dati_articolo["categoria"] = dati_articolo["categoria"].lower()
+    nuovo_articolo = ArticoloORM(**dati_articolo, data_inserimento = data_movimento, data_ultimo_movimento = data_movimento)
     nuovo_movimento = MovimentoORM(id_utente = id_utente_movimento, articolo = nuovo_articolo, quantita = nuovo_articolo.quantita, tipo = "nuovo articolo", data = data_movimento, giacenza_dopo_movimento = nuovo_articolo.quantita)
     session.add_all([nuovo_articolo, nuovo_movimento])
     session.commit()
@@ -60,12 +62,12 @@ def rimuovi_prodotto(id_responsabile: ResponsabileDep, prodotto: ArticoloDep, se
 
 @router.patch("/{id_prodotto}", response_model=ArticoloOut)
 def modifica_articolo(id_responsabile: ResponsabileDep, articolo: ArticoloDep, session: SessionDep, nuovo: ModificaArticolo):
-    if nuovo.nome is not None:
-        articolo.nome= nuovo.nome
-    if nuovo.prezzo is not None:
-        articolo.prezzo = nuovo.prezzo
-    if nuovo.categoria is not None:
-        articolo.categoria = nuovo.categoria.lower()
+    for field, value in nuovo.model_dump(exclude_unset=True).items():
+        if value is None:
+            continue
+        if field == "categoria":
+            value = value.lower()
+        setattr(articolo, field, value)
     session.commit()
     return articolo
 
