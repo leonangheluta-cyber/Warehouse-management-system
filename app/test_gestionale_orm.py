@@ -492,3 +492,13 @@ def test_movimenti_completo_annidati():
     assert body[-1]["articolo"]["nome"] == "Mouse da gaming"
     for dati in body:
         assert "hash_utente" not in dati["utente"]
+
+def test_patch_articolo_categoria_lower():
+    risposta = client.patch("/catalogo/1", json={"categoria": "MOUSE da gaming"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert risposta.json()["categoria"] == "mouse da gaming"
+
+def test_patch_articolo_nome_null():
+    risposta = client.patch("/catalogo/1", json={"nome": None}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert risposta.json()["nome"] == "Mouse da gaming"
