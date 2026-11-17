@@ -71,4 +71,3 @@ class SessioneORM(Base):
     scadenza: Mapped[str]
     utente: Mapped["UtenteORM"] = relationship(back_populates="sessioni")
 
-Base.metadata.create_all(engine)
