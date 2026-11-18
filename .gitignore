@@ -5,3 +5,4 @@ script_gestionale_magazzino.sqbpro
 gestionale_test.db
 gestionale_orm.db
 test_orm.db
+.venv
