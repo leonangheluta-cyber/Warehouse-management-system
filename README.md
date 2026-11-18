@@ -107,6 +107,11 @@ app/
 - **"Find or 404" lookups are reusable dependencies.** `ArticoloDep` and `UtenteDep`
   (`Annotated[..., Depends(...)]`) read the id from the path, load the row and answer `404`
   if it doesn't exist, before the route body runs. Routes just ask for `articolo: ArticoloDep`.
+- **Input models are unpacked, not copied field by field.** A new item is built with
+  `ArticoloORM(**data.model_dump(), ...)` (the category is lowercased first, the dates are added
+  separately). The item `PATCH` uses `model_dump(exclude_unset=True)`, so only the fields the client
+  actually sent are written with `setattr`; a field sent as `null` is skipped instead of erasing the
+  stored value, and the category is always saved in lowercase.
 - **Every endpoint declares its response shape with `response_model`.** Routes return the ORM
   objects and FastAPI filters them through Pydantic `...Out` models (`schemas.py`), keeping
   only the declared fields: internal fields like the password hash can never end up in a
@@ -128,7 +133,7 @@ All endpoints except `/login` require the header `Authorization: Bearer <token>`
 | `POST` | `/catalogo` | operator, manager | Add a new item and record its initial stock as a `nuovo articolo` movement |
 | `GET` | `/catalogo` | operator, manager | List items, optional filters `nome` (partial, case-insensitive), `categoria`, `prezzo_inferiore_a` and `data_inserimento` (YYYY-MM-DD or a prefix like YYYY-MM) |
 | `GET` | `/catalogo/{id_prodotto}` | operator, manager | Read one item |
-| `PATCH` | `/catalogo/{id_prodotto}` | manager | Update name, price or category |
+| `PATCH` | `/catalogo/{id_prodotto}` | manager | Update name, price or category: only the fields sent are changed, `null` values are ignored |
 | `DELETE` | `/catalogo/{id_prodotto}` | manager | Delete an item (`409` if it has movements other than `nuovo articolo`) |
 | `PATCH` | `/catalogo/{id_prodotto}/carico` | operator, manager | Load stock (records a movement) |
 | `PATCH` | `/catalogo/{id_prodotto}/prelievo` | operator, manager | Pick stock (records a movement, reports missing pieces) |
