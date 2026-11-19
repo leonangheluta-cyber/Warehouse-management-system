@@ -52,7 +52,8 @@ def inserisci_dati_prova():
         nuovo_movimento_tre = MovimentoORM(id_utente = 2, id_articolo = 1, quantita = 10, tipo = "carico", data = data_test, giacenza_dopo_movimento = 24)
         nuova_sessione_uno = SessioneORM(id_utente = 1, token = "token_autorizzato", scadenza = "2030-10-10 00:00:00")
         nuova_sessione_due = SessioneORM(id_utente = 2, token = "token_scaduto", scadenza = "2000-10-10 00:00:00")
-        session.add_all([nuovo_articolo_uno, nuovo_articolo_due, nuovo_articolo_tre, nuovo_utente_uno, nuovo_utente_due, nuovo_utente_tre, nuovo_movimento_uno, nuovo_movimento_due, nuovo_movimento_tre, nuova_sessione_uno, nuova_sessione_due])
+        nuova_sessione_tre = SessioneORM(id_utente = 3, token = "token_non_autorizzato", scadenza = "2030-10-10 00:00:00")
+        session.add_all([nuovo_articolo_uno, nuovo_articolo_due, nuovo_articolo_tre, nuovo_utente_uno, nuovo_utente_due, nuovo_utente_tre, nuovo_movimento_uno, nuovo_movimento_due, nuovo_movimento_tre, nuova_sessione_uno, nuova_sessione_due, nuova_sessione_tre])
         session.commit()
 
 PRODOTTO_VALIDO = {"nome": "Tappetino mouse", "prezzo": 15, "categoria": "mouse", "quantita": 25}
@@ -502,3 +503,71 @@ def test_patch_articolo_nome_null():
     risposta = client.patch("/catalogo/1", json={"nome": None}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
     assert risposta.json()["nome"] == "Mouse da gaming"
+
+def test_patch_utente_ruolo_sbagliato():
+    risposta = client.patch("/utenti/1", json={"ruolo": "impiegato"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 400
+    assert risposta.json()["detail"] == "Inserire addetto o responsabile"
+
+def test_patch_utente_username_gia_presente():
+    risposta = client.patch("/utenti/1", json={"username": "mario.m"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 409
+    assert risposta.json()["detail"] == "Username gia in uso"
+
+def test_patch_utente_username_su_se_stesso():
+    risposta = client.patch("/utenti/1", json={"username": "leon.l"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    verifica = client.get("/utenti/1", headers={"Authorization": "Bearer token_autorizzato"})
+    assert verifica.status_code == 200
+    assert verifica.json()["username"] == "leon.l"
+
+def test_patch_utente_campo_mancante():
+    risposta = client.patch("/utenti/1", json={"nome": None, "username": "leone.l"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    verifica = client.get("/utenti/1", headers={"Authorization": "Bearer token_autorizzato"})
+    assert verifica.status_code == 200
+    assert verifica.json()["username"] == "leone.l"
+    assert verifica.json()["nome"] == "Leon"
+
+def test_patch_utente_username_ok():
+    risposta = client.patch("/utenti/1", json={"username": "leone.l"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    verifica = client.get("/utenti/1", headers={"Authorization": "Bearer token_autorizzato"})
+    assert verifica.status_code == 200
+    assert verifica.json()["username"] == "leone.l"
+
+def test_patch_utente_capitalize_nome():
+    risposta = client.patch("/utenti/1", json={"nome": "LEONE"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    verifica = client.get("/utenti/1", headers={"Authorization": "Bearer token_autorizzato"})
+    assert verifica.status_code == 200
+    assert verifica.json()["nome"] == "Leone"
+
+def test_patch_utente_non_autorizzato():
+    risposta = client.patch("/utenti/1", json={"nome": "leon"}, headers={"Authorization": "Bearer token_non_autorizzato"})
+    assert risposta.status_code == 403
+    assert risposta.json()["detail"] == "Azione negata"
+
+def test_patch_utente_inesistente():
+    risposta = client.patch("/utenti/4", json={"nome": "Marco"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 404
+    assert risposta.json()["detail"] == "Utente non trovato"
+
+def test_patch_utente_username_lower():
+    risposta = client.patch("/utenti/1", json={"username": "LEONE.L"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    verifica = client.get("/utenti/1", headers={"Authorization": "Bearer token_autorizzato"})
+    assert verifica.status_code == 200
+    assert verifica.json()["username"] == "leone.l"
+
+def test_patch_utente_ruolo_lower():
+    risposta = client.patch("/utenti/2", json={"ruolo": "RESPONSABILE"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    verifica = client.get("/utenti/2", headers={"Authorization": "Bearer token_autorizzato"})
+    assert verifica.status_code == 200
+    assert verifica.json()["ruolo"] == "responsabile"
+
+def test_patch_utente_username_gia_presente_lower():
+    risposta = client.patch("/utenti/1", json={"username": "MARIO.M"}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 409
+    assert risposta.json()["detail"] == "Username gia in uso"
