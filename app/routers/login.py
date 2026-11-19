@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from fastapi.exceptions import HTTPException
 from app.database import UtenteORM, SessioneORM, SessionDep
 from app.schemas import LoginUtente 
@@ -16,7 +16,7 @@ def login_utente(session: SessionDep, utente: LoginUtente):
     query_utente = select(UtenteORM).where(UtenteORM.username == username)
     utente_trovato = session.scalars(query_utente).one_or_none()
     if utente_trovato is None:
-        raise HTTPException(status_code=401, detail="Credenziali non valide")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenziali non valide")
     verifica_hash = password_hash.verify(utente.password, utente_trovato.hash_utente)
     if verifica_hash:
         token_utente = secrets.token_urlsafe(32)
@@ -26,4 +26,4 @@ def login_utente(session: SessionDep, utente: LoginUtente):
         session.commit()
         return {"token": token_utente}
     else:
-        raise HTTPException(401, detail="Credenziali non valide")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenziali non valide")

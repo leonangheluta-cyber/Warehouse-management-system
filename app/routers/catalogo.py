@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from fastapi.exceptions import HTTPException
 from app.schemas import Articolo, ModificaArticolo, CaricoPrelievo, MovimentoOut, ArticoloConMovimento, ArticoloOut, ArticoloPrelevatoOut
 from app.database import ArticoloORM, MovimentoORM, SessionDep
@@ -16,7 +16,7 @@ def crea_movimento(id_utente_movimento, id_articolo_movimento, quantita_moviment
     return nuovo_movimento
 
 
-@router.post("", response_model=ArticoloConMovimento)
+@router.post("", response_model=ArticoloConMovimento, status_code=status.HTTP_201_CREATED)
 def aggiungi_articolo(id_utente_movimento: AddettoDep, session: SessionDep, articolo: Articolo):
     data_movimento = str(datetime.now().replace(microsecond=0))
     dati_articolo = articolo.model_dump()
@@ -52,7 +52,7 @@ def cerca_id(prodotto: ArticoloDep, id_utente: AddettoDep):
 def rimuovi_prodotto(id_responsabile: ResponsabileDep, prodotto: ArticoloDep, session: SessionDep):
     for movimento in prodotto.movimenti:
         if movimento.tipo != "nuovo articolo":
-            raise HTTPException(status_code=409, detail="L'articolo presenta movimenti")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="L'articolo presenta movimenti")
         else:
             session.delete(movimento)
     session.delete(prodotto)
