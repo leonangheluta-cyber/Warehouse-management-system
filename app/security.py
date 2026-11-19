@@ -1,5 +1,5 @@
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi import Depends
+from fastapi import Depends, status
 from fastapi.exceptions import HTTPException
 from app.database import SessioneORM, UtenteORM, SessionDep
 from sqlalchemy import select
@@ -17,12 +17,12 @@ def controlla_token(session: SessionDep, credenziali: HTTPAuthorizationCredentia
     query_sessione = select(SessioneORM).where(SessioneORM.token == token)
     sessione_trovata = session.scalars(query_sessione).one_or_none()
     if sessione_trovata is None:
-        raise HTTPException(status_code=401, detail="Token non valido")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token non valido")
     scadenza = datetime.fromisoformat(sessione_trovata.scadenza)
     if scadenza > datetime.now().replace(microsecond=0):
         return sessione_trovata.id_utente
     else:
-        raise HTTPException(status_code=401, detail="Token scaduto")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token scaduto")
 
 
 def controlla_ruolo_addetto_responsabile(session: SessionDep, id_utente: int = Depends(controlla_token)):
@@ -30,11 +30,11 @@ def controlla_ruolo_addetto_responsabile(session: SessionDep, id_utente: int = D
     utente_trovato = session.scalars(query_utente).one_or_none()
     if utente_trovato is not None:
         if utente_trovato.ruolo not in ["addetto", "responsabile"]:
-            raise HTTPException(status_code=403, detail="Azione negata")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Azione negata")
         else:
             return id_utente
     else:
-        raise HTTPException(status_code=401, detail="Utente non trovato")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Utente non trovato")
 
 
 def controlla_ruolo_responsabile(session: SessionDep, id_utente: int = Depends(controlla_token)):
@@ -42,11 +42,11 @@ def controlla_ruolo_responsabile(session: SessionDep, id_utente: int = Depends(c
     responsabile_trovato = session.scalars(query_responsabile).one_or_none()
     if responsabile_trovato is not None:
         if responsabile_trovato.ruolo != "responsabile":
-            raise HTTPException(status_code=403, detail="Azione negata")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Azione negata")
         else:
             return id_utente
     else:
-        raise HTTPException(status_code=401, detail="Utente non trovato")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Utente non trovato")
 
 
 ResponsabileDep = Annotated[int, Depends(controlla_ruolo_responsabile)]

@@ -71,7 +71,7 @@ def pulisci_db():
 
 def test_prova_funzione_fixture_aggiungi_prodotto():
     risposta = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})    
-    assert risposta.status_code == 200
+    assert risposta.status_code == 201
     id_nuovo_prodotto = risposta.json()["articolo"]["id"]
     assert risposta.json()["articolo"]["nome"] == PRODOTTO_VALIDO["nome"]
     richiesta_nuovo = client.get(f"/catalogo/{id_nuovo_prodotto}", headers={"Authorization": "Bearer token_autorizzato"})
@@ -92,7 +92,7 @@ def test_foreign_key_nuovo_movimento_articolo_inesistente():
 
 def test_delete_nuovo_articolo_senza_movimenti_movimento_nuovo_articolo():
     nuovo = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert nuovo.status_code == 200
+    assert nuovo.status_code == 201
     id_nuovo = nuovo.json()["articolo"]["id"]
     rimozione = client.delete(f"/catalogo/{id_nuovo}", headers={"Authorization": "Bearer token_autorizzato"})
     assert rimozione.status_code == 200
@@ -100,7 +100,7 @@ def test_delete_nuovo_articolo_senza_movimenti_movimento_nuovo_articolo():
 
 def test_delete_nuovo_articolo_e_movimenti_carico():
     nuovo = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert nuovo.status_code == 200
+    assert nuovo.status_code == 201
     id_nuovo = nuovo.json()["articolo"]["id"]
     aggiunta = client.patch(f"/catalogo/{id_nuovo}/carico", json={"quantita": 1}, headers={"Authorization": "Bearer token_autorizzato"})
     assert aggiunta.status_code == 200
@@ -110,7 +110,7 @@ def test_delete_nuovo_articolo_e_movimenti_carico():
 
 def test_post_articolo_movimento_nuovo_articolo():
     risposta = client.post("/catalogo", json=PRODOTTO_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert risposta.status_code == 200
+    assert risposta.status_code == 201
     assert risposta.json()["movimento"]["tipo"] == "nuovo articolo"
 
 def test_movimenti_per_prodotto():
@@ -148,7 +148,7 @@ def test_rimuovi_utente_senza_autorizzazione():
 
 def test_registra_e_cancella_utente_e_aggiunta_prodotto_utente_cancellato():
     registrazione = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert registrazione.status_code == 200
+    assert registrazione.status_code == 201
     id_utente = registrazione.json()["id"]
     login = client.post("/login", json={"username": UTENTE_VALIDO["username"], "password": UTENTE_VALIDO["password"]})
     assert login.status_code == 200
@@ -193,7 +193,7 @@ def test_nuovo_utente_password_corta():
 
 def test_hash_utente():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert risposta.status_code == 200
+    assert risposta.status_code == 201
     id_utente = risposta.json()["id"]
     with Session(engine_test) as session:
         utente = session.get(UtenteORM, id_utente)
@@ -202,7 +202,7 @@ def test_hash_utente():
 
 def test_login_password_sbagliata():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert risposta.status_code == 200
+    assert risposta.status_code == 201
     username = risposta.json()["username"]
     controllo = client.post("/login", json={"username": username, "password": "123456789"})
     assert controllo.status_code == 401
@@ -210,7 +210,7 @@ def test_login_password_sbagliata():
 
 def test_aggiungi_utente_e_login_corretti():
     risposta = client.post("/utenti", json=UTENTE_VALIDO, headers={"Authorization": "Bearer token_autorizzato"})
-    assert risposta.status_code == 200
+    assert risposta.status_code == 201
     username = risposta.json()["username"]
     password = UTENTE_VALIDO["password"]
     controllo = client.post("/login", json={"username": username, "password": password})
@@ -410,7 +410,7 @@ def test_mostra_utenti_non_autorizzato():
 def test_inserimenti_prodotto_valido():
     dati = PRODOTTO_VALIDO.copy()
     risposta = client.post("/catalogo", json=dati, headers={"Authorization": "Bearer token_autorizzato"})
-    assert risposta.status_code == 200
+    assert risposta.status_code == 201
     id_nuovo_prodotto = risposta.json()["articolo"]["id"]
     rilettura = client.get(f"/catalogo/{id_nuovo_prodotto}", headers={"Authorization": "Bearer token_autorizzato"})
     assert rilettura.status_code == 200

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from fastapi.exceptions import HTTPException
 from sqlalchemy import select
 from app.security import ResponsabileDep
@@ -22,7 +22,7 @@ def movimenti_utente(id_responsabile: ResponsabileDep, utente: UtenteDep, sessio
     query_movimenti = select(MovimentoORM).where(MovimentoORM.id_utente == utente.id)
     if tipo_movimenti is not None:
         if tipo_movimenti not in ["carico", "prelievo", "nuovo articolo"]:
-            raise HTTPException(status_code=400, detail="Tipo movimento non valido")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tipo movimento non valido")
         query_movimenti = query_movimenti.where(MovimentoORM.tipo == tipo_movimenti)
     if data is not None:
         query_movimenti = query_movimenti.where(MovimentoORM.data.startswith(data))
