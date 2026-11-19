@@ -26,6 +26,11 @@ class LoginUtente(BaseModel):
     username: str 
     password: str 
 
+class ModificaUtente(BaseModel):
+    nome: str | None = Field(default=None, min_length=2)
+    username: str | None =  Field(default = None, min_length=3, max_length=15)
+    ruolo: str | None = Field(default=None)
+
 #------- response_model ----------
 
 class UtenteOut(BaseModel):
