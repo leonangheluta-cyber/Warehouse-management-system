@@ -31,6 +31,13 @@ class ModificaUtente(BaseModel):
     username: str | None =  Field(default = None, min_length=3, max_length=15)
     ruolo: str | None = Field(default=None)
 
+class FiltriCatalogo(BaseModel):
+    categoria: str | None = None 
+    prezzo_massimo: float | None = None
+    data_inserimento: str | None = None
+    nome: str | None = None
+    quantita_massima: int | None = Field(default=None, ge=0)
+
 #------- response_model ----------
 
 class UtenteOut(BaseModel):
@@ -82,3 +89,7 @@ class MovimentoCompletoOut(BaseModel):
     data: str
     utente: UtenteMovimento
     articolo: ArticoloMovimento
+
+class CatalogoOut(BaseModel):
+    articoli: list[ArticoloOut]
+    totale: int

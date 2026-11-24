@@ -316,15 +316,15 @@ def test_trova_prodotti_categoria():
     dati = risposta.json()
     assert risposta.status_code == 200
     assert dati != []
-    for riga in dati:
+    for riga in dati["articoli"]:
         assert riga["categoria"] == "mouse"
 
 def test_trova_prodotti_filtro_prezzo():
-    risposta = client.get("/catalogo?prezzo_inferiore_a=50", headers={"Authorization": "Bearer token_autorizzato"})
+    risposta = client.get("/catalogo?prezzo_massimo=50", headers={"Authorization": "Bearer token_autorizzato"})
     dati = risposta.json()
     assert risposta.status_code == 200
     assert dati != []
-    for riga in dati:
+    for riga in dati["articoli"]:
         assert riga["prezzo"]<=50
 
 def test_carico_quantita_valida():
@@ -463,13 +463,13 @@ def test_filtro_nome_get_catalogo():
     risposta = client.get("/catalogo", params={"nome": "mouse"}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
     body = risposta.json()
-    assert len(body) == 1
-    assert body[0]["nome"] == "Mouse da gaming"
+    assert len(body["articoli"]) == 1
+    assert body["articoli"][0]["nome"] == "Mouse da gaming"
 
 def test_filtro_nome_inesistente_get_catalogo():
     risposta = client.get("/catalogo", params={"nome": "scheda video"}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
-    assert risposta.json() == []
+    assert not len(risposta.json()["articoli"]) 
 
 def test_filtro_data_get_catalogo():
     with Session(engine_test) as session:
@@ -479,8 +479,8 @@ def test_filtro_data_get_catalogo():
     risposta = client.get("/catalogo", params={"data_inserimento": data_test}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 200
     dati = risposta.json()
-    assert len(dati) == 3
-    for articolo in dati:
+    assert len(dati["articoli"]) == 3
+    for articolo in dati["articoli"]:
         assert articolo["data_inserimento"] == data_test
 
 def test_movimenti_completo_annidati():
@@ -571,3 +571,35 @@ def test_patch_utente_username_gia_presente_lower():
     risposta = client.patch("/utenti/1", json={"username": "MARIO.M"}, headers={"Authorization": "Bearer token_autorizzato"})
     assert risposta.status_code == 409
     assert risposta.json()["detail"] == "Username gia in uso"
+
+def test_filtro_catalogo_quantita():
+    risposta = client.get("/catalogo", params={"quantita_massima": 15}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    body = risposta.json()
+    assert len(body["articoli"]) == 2
+    for articolo in body["articoli"]:
+        assert articolo["quantita"] <= 15
+
+def test_filtro_catalogo_quantita_negativa():
+    risposta = client.get("/catalogo", params={"quantita_massima": -5}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 422
+    assert risposta.json()["detail"][0]["loc"] == ["query", "quantita_massima"]
+
+def test_filtro_catalogo_quantita_prezzo():
+    risposta = client.get("/catalogo", params={"quantita_massima": 50, "prezzo_massimo": 25}, headers={"Authorization": "Bearer token_autorizzato"})    
+    assert risposta.status_code == 200
+    body = risposta.json()
+    assert len(body["articoli"]) == 2
+    for articolo in body["articoli"]:
+        assert articolo["quantita"] <= 50
+        assert articolo["prezzo"] <= 25
+
+def test_get_catalogo_nessun_filtro():
+    risposta = client.get("/catalogo", headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert len(risposta.json()["articoli"]) == 3
+
+def test_filtri_catalogo_quantita_zero():
+    risposta = client.get("/catalogo", params={"quantita_massima": 0}, headers={"Authorization": "Bearer token_autorizzato"})
+    assert risposta.status_code == 200
+    assert len(risposta.json()["articoli"]) == 0
