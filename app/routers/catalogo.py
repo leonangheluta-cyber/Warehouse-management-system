@@ -1,11 +1,12 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Query
 from fastapi.exceptions import HTTPException
-from app.schemas import Articolo, ModificaArticolo, CaricoPrelievo, MovimentoOut, ArticoloConMovimento, ArticoloOut, ArticoloPrelevatoOut
+from app.schemas import Articolo, ModificaArticolo, CaricoPrelievo, MovimentoOut, ArticoloConMovimento, ArticoloOut, ArticoloPrelevatoOut, FiltriCatalogo, CatalogoOut
 from app.database import ArticoloORM, MovimentoORM, SessionDep
 from app.security import ResponsabileDep, AddettoDep
 from app.dependencies import ArticoloDep
 from sqlalchemy import select
 from datetime import datetime
+from typing import Annotated
 
 
 router = APIRouter(prefix="/catalogo", tags=["CATALOGO"])
@@ -28,19 +29,21 @@ def aggiungi_articolo(id_utente_movimento: AddettoDep, session: SessionDep, arti
     return {"articolo": nuovo_articolo, "movimento": nuovo_movimento}
 
 
-@router.get("", response_model=list[ArticoloOut])
-def trova_prodotti(id_utente: AddettoDep, session: SessionDep, nome: str = None, prezzo_inferiore_a: float = None, categoria: str = None, data_inserimento: str = None):
+@router.get("", response_model=CatalogoOut)
+def trova_prodotti(id_utente: AddettoDep, session: SessionDep, filtri: Annotated[FiltriCatalogo, Query()]):
     query_catalogo = select(ArticoloORM)
-    if categoria is not None:
-        query_catalogo = query_catalogo.where(ArticoloORM.categoria == categoria.lower())
-    if prezzo_inferiore_a is not None:
-        query_catalogo = query_catalogo.where(ArticoloORM.prezzo <= prezzo_inferiore_a)
-    if data_inserimento is not None:
-        query_catalogo = query_catalogo.where(ArticoloORM.data_inserimento.startswith(data_inserimento))
-    if nome is not None:
-        query_catalogo = query_catalogo.where(ArticoloORM.nome.ilike(f"%{nome}%"))
+    if filtri.categoria is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.categoria == filtri.categoria.lower())
+    if filtri.prezzo_massimo is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.prezzo <= filtri.prezzo_massimo)
+    if filtri.data_inserimento is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.data_inserimento.startswith(filtri.data_inserimento))
+    if filtri.nome is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.nome.ilike(f"%{filtri.nome}%"))
+    if filtri.quantita_massima is not None:
+        query_catalogo = query_catalogo.where(ArticoloORM.quantita <= filtri.quantita_massima)
     catalogo_trovato = session.scalars(query_catalogo).all()
-    return catalogo_trovato
+    return {"articoli": catalogo_trovato, "totale": len(catalogo_trovato)}
 
 
 @router.get("/{id_prodotto}", response_model=ArticoloOut)
