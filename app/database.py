@@ -1,26 +1,23 @@
 import os
 from fastapi import Depends
-from sqlalchemy import create_engine, Numeric, ForeignKey, event
+from sqlalchemy import create_engine, Numeric, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, Session, DeclarativeBase, relationship
 from decimal import Decimal
 from typing import Annotated
+from dotenv import load_dotenv
+from pathlib import Path
 
-CARTELLA = os.path.dirname(os.path.abspath(__file__))
-PERCORSO_DB_ORM = os.path.join(CARTELLA, "gestionale_orm.db")
+patch_env = Path.home() / "Secret" / ".env"
+load_dotenv(dotenv_path=patch_env)
+PERCORSO_POSTGRE_GESTIONALE = os.environ.get("POSTGRE_GESTIONALE_ADDETTO")
 
-engine = create_engine(f"sqlite+pysqlite:///{PERCORSO_DB_ORM}", echo=True)
+engine = create_engine(PERCORSO_POSTGRE_GESTIONALE, echo=True)
 
 def apri_db():
     with Session(engine) as session:
         yield session
 
 SessionDep = Annotated[Session, Depends(apri_db)]
-
-@event.listens_for(engine, "connect")
-def attiva_foreign_keys(connessione_dbapi, record_connessione):
-    cursore = connessione_dbapi.cursor()
-    cursore.execute("PRAGMA foreign_keys = ON")
-    cursore.close()
 
 #------ ORM classes ------
 
